@@ -5,8 +5,8 @@ docker-compose up --build
 
 http://localhost:8080/h2-console/
 
-curl -d '{"text":"jouda"}' -H "Content-Type: application/json" -X POST http://localhost:8080
-http://localhost:8080/
+curl -d '{"text":"jouda"}' -H "Content-Type: application/json" -X POST http://localhost:8080    
+curl http://localhost:8080/
 
 ## Locust
 locust    
