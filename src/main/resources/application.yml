@@ -4,10 +4,10 @@ spring:
   flyway:
     baselineOnMigrate: true
   datasource:
-    url: jdbc:postgresql://dbpostgresql:5432/polldb
+    url: jdbc:postgresql://${POSTGRES_HOST}:5432/postgres
     driver-class-name: org.postgresql.Driver
-    username: postgres
-    password: password
+    username: ${POSTGRES_USER} #postgres
+    password: ${POSTGRES_PASSWORD} #password
   jpa:
     properties:
       hibernate:
