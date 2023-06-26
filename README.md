@@ -1,6 +1,6 @@
 # Tern
 
-./mvnw clean package
+./mvnw clean package    
 docker-compose up --build
 
 http://localhost:8080/h2-console/

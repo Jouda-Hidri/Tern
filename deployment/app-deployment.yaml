@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: tern-demo
-          image: tern-demo:1
+          image: tern-demo:2
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
