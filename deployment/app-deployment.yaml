@@ -14,7 +14,23 @@ spec:
     spec:
       containers:
         - name: tern-demo
-          image: tern-demo:1
+          image: tern-demo:5
+          env:
+          - name: POSTGRES_USER
+            valueFrom:
+              configMapKeyRef:
+                name: postgres-config
+                key: postgres_user
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              configMapKeyRef:
+                name: postgres-config
+                key: postgres_password
+          - name: POSTGRES_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: postgres-config
+                key: postgres_host
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
