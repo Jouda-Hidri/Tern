@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  labels:
+    app: postgresql
+    tier: database
+spec:
+  selector:
+    matchLabels:
+      app: postgresql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: postgresql
+        tier: database
+    spec:
+      containers:
+        - name: postgresql
+          image: postgres:12
+          imagePullPolicy: "IfNotPresent"
+          env:
+            - name: POSTGRES_DB
+              value: postgres
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: password
+          ports:
+            - containerPort: 5432
+              name: postgresql
+          volumeMounts:
+            - name: postgresql-claim0
+              mountPath: /var/lib/postgresql/data
+            - mountPath: /docker-entrypoint-initdb.d
+              name: postgresql-initdb
+      volumes:
+        - name: postgresql-claim0
+          persistentVolumeClaim:
+            claimName: postgresql-claim0
+        - name: postgresql-initdb
+          configMap:
+            name: postgresql-initdb-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  labels:
+    app: postgresql
+    tier: database
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: postgresql
+    tier: database
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-claim0
+  labels:
+    app: postgresql
+    tier: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-initdb-config
+data:
+  init.sql: CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; CREATE TABLE IF NOT EXISTS messages (id   UUID DEFAULT uuid_generate_v4() PRIMARY KEY,text VARCHAR NOT NULL);
+
