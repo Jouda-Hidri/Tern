@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
+import org.slf4j.LoggerFactory
+import org.springframework.web.bind.annotation.*
 
 @SpringBootApplication
 class ArticApplication
@@ -20,30 +22,41 @@ fun main(args: Array<String>) {
 }
 
 @RestController
-class MessageResource(val service: MessageService) {
-	@GetMapping
-	fun index(): List<Message> = service.findMessages()
-	@PostMapping
+class MessageResource(private val service: MessageService) {
+	private val logger = LoggerFactory.getLogger(MessageResource::class.java)
+
+	@GetMapping("/")
+	fun index(): List<Message> {
+		logger.info("GET / - Retrieving messages")
+		return service.findMessages()
+	}
+
+	@PostMapping("/")
 	fun post(@RequestBody message: Message) {
+		logger.info("POST / - Posting message: $message")
 		service.post(message)
 	}
 }
 
 @Service
-class MessageService(val db: MessageRepository) {
+class MessageService(private val db: MessageRepository) {
+	private val logger = LoggerFactory.getLogger(MessageService::class.java)
 
-	fun findMessages(): List<Message> = db.findMessages()
+	fun findMessages(): List<Message> {
+		logger.info("Finding messages")
+		return db.findMessages()
+	}
 
-	fun post(message: Message){
+	fun post(message: Message) {
+		logger.info("Saving message: $message")
 		db.save(message)
 	}
 }
 
-@Table("MESSAGES")
+@Table("messages")
 data class Message(@Id val id: String?, val text: String)
 
-interface MessageRepository : CrudRepository<Message, String>{
-
-	@Query("select * from messages")
+interface MessageRepository : CrudRepository<Message, String> {
+	@Query("SELECT * FROM messages")
 	fun findMessages(): List<Message>
 }
