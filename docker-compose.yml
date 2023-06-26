@@ -4,14 +4,13 @@ services:
     build: ./
     ports:
       - "8080:8080"
-#    depends_on:
-#      - dbpostgresql
-#  dbpostgresql:
-#    image: postgres
-#    ports:
-#      - "5432:5432"
-#    environment:
-#      - SPRING_PROFILES_ACTIVE=docker
-#      - POSTGRES_PASSWORD=password
-#      - POSTGRES_USER=postgres
-#      - POSTGRES_DB=polldb
+    depends_on:
+      - dbpostgresql
+  dbpostgresql:
+    image: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=polldb
