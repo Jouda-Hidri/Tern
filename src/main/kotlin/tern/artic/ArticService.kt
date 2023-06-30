@@ -6,8 +6,8 @@ import io.grpc.ManagedChannelBuilder
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import tern.antarctic.Message
-import tern.artic.grpc.TernServiceGrpc
-import tern.artic.grpc.TernServiceOuterClass.SaveRequest
+import tern.grpc.TernServiceGrpc
+import tern.grpc.TernServiceOuterClass.SaveRequest
 
 @Service
 class ArticService() {

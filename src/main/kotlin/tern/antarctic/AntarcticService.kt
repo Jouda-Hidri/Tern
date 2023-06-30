@@ -4,8 +4,8 @@ import com.google.protobuf.Empty
 import io.grpc.stub.StreamObserver
 import net.devh.boot.grpc.server.service.GrpcService
 import org.slf4j.LoggerFactory
-import tern.artic.grpc.TernServiceGrpc
-import tern.artic.grpc.TernServiceOuterClass.*
+import tern.grpc.TernServiceGrpc
+import tern.grpc.TernServiceOuterClass.*
 
 @GrpcService
 class AntarcticService(private val db: MessageRepository) : TernServiceGrpc.TernServiceImplBase() {

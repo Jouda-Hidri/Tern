@@ -1,5 +1,5 @@
 syntax = "proto3";
-package tern.artic.grpc;
+package tern.grpc;
 import "google/protobuf/empty.proto";
 
 message GetResponse {
