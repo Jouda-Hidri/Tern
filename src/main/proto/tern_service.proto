@@ -14,7 +14,7 @@ message SaveResponse {
   string id = 1;
 }
 
-service ProfileService { // todo rename to TernService
+service TernService {
   rpc GetMessage (google.protobuf.Empty) returns (stream GetResponse) {}
   rpc SaveMessage (SaveRequest) returns (SaveResponse);
 }

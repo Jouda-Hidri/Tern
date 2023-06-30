@@ -5,8 +5,8 @@ import io.grpc.ManagedChannel
 import io.grpc.ManagedChannelBuilder
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import tern.artic.grpc.ProfileServiceGrpc
-import tern.artic.grpc.TernService
+import tern.artic.grpc.TernServiceGrpc
+import tern.artic.grpc.TernServiceOuterClass.SaveRequest
 
 @Service
 class ArticService() {
@@ -14,7 +14,7 @@ class ArticService() {
     private var channel: ManagedChannel = ManagedChannelBuilder.forAddress("localhost", 9090)
         .usePlaintext()
         .build()
-    private var stub: ProfileServiceGrpc.ProfileServiceBlockingStub = ProfileServiceGrpc.newBlockingStub(channel)
+    private var stub = TernServiceGrpc.newBlockingStub(channel)
 
     fun find(): List<Message> {
         logger.info("Artic - Retrieving messages")
@@ -29,7 +29,7 @@ class ArticService() {
     fun save(message: Message) {
         logger.info("Artic - Request message: $message")
         stub.saveMessage(
-            TernService.SaveRequest.newBuilder()
+            SaveRequest.newBuilder()
                 .setText(message.text)
                 .build()
         )

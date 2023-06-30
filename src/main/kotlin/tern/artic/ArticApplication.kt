@@ -19,7 +19,7 @@ fun main(args: Array<String>) {
 }
 
 @RestController
-class MessageResource(private val service: ArticService) { // todo replace with ArticService
+class MessageResource(private val service: ArticService) {
     private val logger = LoggerFactory.getLogger(MessageResource::class.java)
     @GetMapping("/")
     fun find(): List<Message> {
