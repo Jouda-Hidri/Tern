@@ -13,8 +13,6 @@ import org.springframework.data.repository.CrudRepository
 import org.springframework.stereotype.Service
 import org.springframework.web.bind.annotation.*
 import tern.artic.grpc.ProfileDescriptorOuterClass
-import tern.artic.grpc.ProfileDescriptorOuterClass.ProfileDescriptor
-import tern.artic.grpc.ProfileDescriptorOuterClass.Request
 import tern.artic.grpc.ProfileServiceGrpc.ProfileServiceImplBase
 
 @SpringBootApplication
@@ -45,13 +43,12 @@ class MessageResource(private val service: MessageService) {
 @GrpcService
 class GrpcProfileService(private val db: MessageRepository) : ProfileServiceImplBase() {
 	private val log = LoggerFactory.getLogger(GrpcProfileService::class.java)
-	// todo the proper to call persistence using grpc
-	override fun getMessage(request: Empty, responseObserver: StreamObserver<ProfileDescriptorOuterClass.Response>) {
+	override fun getMessage(request: Empty, responseObserver: StreamObserver<ProfileDescriptorOuterClass.GetResponse>) {
 		println("get messages")
 		val messages = db.findMessages()
 		for ((id, text) in messages) {
 			responseObserver.onNext(
-				ProfileDescriptorOuterClass.Response
+				ProfileDescriptorOuterClass.GetResponse
 					.newBuilder()
 					.setText(text)
 					.build()
@@ -59,9 +56,15 @@ class GrpcProfileService(private val db: MessageRepository) : ProfileServiceImpl
 		}
 		responseObserver.onCompleted()
 	}
-	override fun saveMessage(request: Request, responseObserver: StreamObserver<Empty>) {
+	override fun saveMessage(request: ProfileDescriptorOuterClass.SaveRequest, responseObserver: StreamObserver<ProfileDescriptorOuterClass.SaveResponse>) {
 		println("save message $request")
-		db.save(Message(id=null, text=request.text))
+		var result = db.save(Message(id = null, text = request.text))
+		responseObserver.onNext(
+			ProfileDescriptorOuterClass.SaveResponse
+				.newBuilder()
+				.setId(result.id)
+				.build()
+		)
 		responseObserver.onCompleted()
 	}
 
