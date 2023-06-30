@@ -3,5 +3,6 @@ package tern.artic.grpc;
 import "google/protobuf/empty.proto";
 import "profile_descriptor.proto";
 service ProfileService {
-  rpc GetMessage (google.protobuf.Empty) returns (ProfileDescriptor) {}
+  rpc GetMessage (google.protobuf.Empty) returns (stream Response) {}
+  rpc SaveMessage (Request) returns (google.protobuf.Empty);
 }

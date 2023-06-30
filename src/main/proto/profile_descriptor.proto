@@ -4,3 +4,9 @@ message ProfileDescriptor {
   string profile_id = 1;
   string text = 2;
 }
+message Request {
+  string text = 1;
+}
+message Response {
+  string text = 1;
+}

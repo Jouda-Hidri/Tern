@@ -4,7 +4,6 @@ import com.google.protobuf.Empty
 import io.grpc.stub.StreamObserver
 import net.devh.boot.grpc.server.service.GrpcService
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 import org.springframework.data.annotation.Id
@@ -13,7 +12,9 @@ import org.springframework.data.relational.core.mapping.Table
 import org.springframework.data.repository.CrudRepository
 import org.springframework.stereotype.Service
 import org.springframework.web.bind.annotation.*
+import tern.artic.grpc.ProfileDescriptorOuterClass
 import tern.artic.grpc.ProfileDescriptorOuterClass.ProfileDescriptor
+import tern.artic.grpc.ProfileDescriptorOuterClass.Request
 import tern.artic.grpc.ProfileServiceGrpc.ProfileServiceImplBase
 
 @SpringBootApplication
@@ -26,8 +27,7 @@ fun main(args: Array<String>) {
 @RestController
 class MessageResource(private val service: MessageService) {
 	private val logger = LoggerFactory.getLogger(MessageResource::class.java)
-// todo call gRPC service, and then the gRPC calls the persistence
-	// todo replace the MessageService with the gRPC service
+	// todo call persistnec via gRPC
 	@GetMapping("/")
 	fun index(): List<Message> {
 		logger.info("GET / - Retrieving messages")
@@ -36,7 +36,7 @@ class MessageResource(private val service: MessageService) {
 
 	@PostMapping("/")
 	fun post(@RequestBody message: Message) {
-		logger.info("POST / - Posting message: $message")
+		logger.info("POST / - Posting message: ${message.toString().toByteArray()}")
 		service.post(message)
 	}
 }
@@ -45,20 +45,25 @@ class MessageResource(private val service: MessageService) {
 @GrpcService
 class GrpcProfileService(private val db: MessageRepository) : ProfileServiceImplBase() {
 	private val log = LoggerFactory.getLogger(GrpcProfileService::class.java)
-	override fun getMessage(request: Empty, responseObserver: StreamObserver<ProfileDescriptor>) {
-		println("getCurrentProfile")
+	// todo the proper to call persistence using grpc
+	override fun getMessage(request: Empty, responseObserver: StreamObserver<ProfileDescriptorOuterClass.Response>) {
+		println("get messages")
 		val messages = db.findMessages()
 		for ((id, text) in messages) {
 			responseObserver.onNext(
-				ProfileDescriptor
+				ProfileDescriptorOuterClass.Response
 					.newBuilder()
-					.setProfileId(id)
 					.setText(text)
 					.build()
 			)
 		}
 		responseObserver.onCompleted()
-	} // todo saveMessage
+	}
+	override fun saveMessage(request: Request, responseObserver: StreamObserver<Empty>) {
+		println("save message $request")
+		db.save(Message(id=null, text=request.text))
+		responseObserver.onCompleted()
+	}
 
 }
 
