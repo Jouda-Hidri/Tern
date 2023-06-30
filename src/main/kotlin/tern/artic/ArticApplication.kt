@@ -1,6 +1,7 @@
 package tern.artic
 
 import com.google.protobuf.Empty
+import io.grpc.ManagedChannel
 import io.grpc.ManagedChannelBuilder
 import io.grpc.stub.StreamObserver
 import net.devh.boot.grpc.server.service.GrpcService
@@ -14,6 +15,7 @@ import org.springframework.data.repository.CrudRepository
 import org.springframework.stereotype.Service
 import org.springframework.web.bind.annotation.*
 import tern.artic.grpc.ProfileDescriptorOuterClass
+import tern.artic.grpc.ProfileDescriptorOuterClass.SaveRequest
 import tern.artic.grpc.ProfileServiceGrpc
 import tern.artic.grpc.ProfileServiceGrpc.ProfileServiceImplBase
 
@@ -26,28 +28,32 @@ fun main(args: Array<String>) {
 }
 
 @RestController
-class MessageResource(private val service: MessageService) {
+class MessageResource(private val service: MessageService) { // todo replace with ArticService
     private val logger = LoggerFactory.getLogger(MessageResource::class.java)
+    private var channel: ManagedChannel = ManagedChannelBuilder.forAddress("localhost", 9090)
+        .usePlaintext()
+        .build()
+    private var stub: ProfileServiceGrpc.ProfileServiceBlockingStub = ProfileServiceGrpc.newBlockingStub(channel)
+
     @GetMapping("/")
     fun index(): List<Message> {
         logger.info("GET / - Retrieving messages")
-        val channel = ManagedChannelBuilder.forAddress("localhost", 9090)
-            .usePlaintext()
-            .build()
-        val stub = ProfileServiceGrpc.newBlockingStub(channel)
         val response = stub.getMessage(Empty.getDefaultInstance())
-        val list:MutableList<Message> = mutableListOf()
-        while (response.hasNext()) {
-            list.add(Message(id=null, text=response.next().text))
+        val list: MutableList<Message> = mutableListOf()
+        response.forEach { getResponse ->
+            list.add(Message(id = null, text = getResponse.text))
         }
-        channel.shutdown()
         return list
     }
 
     @PostMapping("/")
     fun post(@RequestBody message: Message) {
-        logger.info("POST / - Posting message: ${message.toString().toByteArray()}")
-        service.post(message)
+        logger.info("POST / - Posting message: $message")
+        stub.saveMessage(
+            SaveRequest.newBuilder()
+                .setText(message.text)
+                .build()
+        )
     }
 }
 
