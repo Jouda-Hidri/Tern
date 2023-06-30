@@ -1,0 +1,6 @@
+syntax = "proto3";
+package tern.artic.grpc;
+message ProfileDescriptor {
+  int64 profile_id = 1;
+  string name = 2;
+}

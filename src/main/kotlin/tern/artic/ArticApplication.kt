@@ -24,7 +24,8 @@ fun main(args: Array<String>) {
 @RestController
 class MessageResource(private val service: MessageService) {
 	private val logger = LoggerFactory.getLogger(MessageResource::class.java)
-
+// todo call gRPC service, and then the gRPC calls the persistence
+	// todo replace the MessageService with the gRPC service
 	@GetMapping("/")
 	fun index(): List<Message> {
 		logger.info("GET / - Retrieving messages")
