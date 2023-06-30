@@ -1,4 +1,4 @@
-package tern.artic
+package tern
 
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.SpringBootApplication
@@ -9,6 +9,7 @@ import org.springframework.data.relational.core.mapping.Table
 import org.springframework.data.repository.CrudRepository
 import org.springframework.stereotype.Service
 import org.springframework.web.bind.annotation.*
+import tern.artic.ArticService
 
 
 @SpringBootApplication

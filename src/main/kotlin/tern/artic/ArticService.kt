@@ -5,6 +5,7 @@ import io.grpc.ManagedChannel
 import io.grpc.ManagedChannelBuilder
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import tern.Message
 import tern.artic.grpc.TernServiceGrpc
 import tern.artic.grpc.TernServiceOuterClass.SaveRequest
 
