@@ -4,8 +4,14 @@ services:
     build: ./
     ports:
       - "8080:8080"
+      - "9090:9090"
     depends_on:
       - dbpostgresql
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=polldb
+      - POSTGRES_HOST=dbpostgresql
   dbpostgresql:
     image: postgres
     ports:
@@ -14,3 +20,4 @@ services:
       - POSTGRES_PASSWORD=password
       - POSTGRES_USER=postgres
       - POSTGRES_DB=polldb
+      - POSTGRES_HOST=dbpostgresql

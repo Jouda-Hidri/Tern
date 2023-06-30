@@ -1,0 +1,20 @@
+syntax = "proto3";
+package tern.grpc;
+import "google/protobuf/empty.proto";
+
+message GetResponse {
+  string text = 1;
+}
+
+message SaveRequest {
+  string text = 1;
+}
+
+message SaveResponse {
+  string id = 1;
+}
+
+service TernService {
+  rpc GetMessage (google.protobuf.Empty) returns (stream GetResponse) {}
+  rpc SaveMessage (SaveRequest) returns (SaveResponse);
+}
