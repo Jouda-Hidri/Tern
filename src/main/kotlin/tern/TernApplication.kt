@@ -3,10 +3,9 @@ package tern
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 
-
 @SpringBootApplication
-class ArticApplication
+class TernApplication
 
 fun main(args: Array<String>) {
-    runApplication<ArticApplication>(*args)
+    runApplication<TernApplication>(*args)
 }
