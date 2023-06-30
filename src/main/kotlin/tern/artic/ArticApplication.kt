@@ -1,18 +1,20 @@
 package tern.artic
 
-import org.springframework.data.annotation.Id
+import com.google.protobuf.Empty
+import io.grpc.stub.StreamObserver
+import net.devh.boot.grpc.server.service.GrpcService
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
+import org.springframework.data.annotation.Id
 import org.springframework.data.jdbc.repository.query.Query
 import org.springframework.data.relational.core.mapping.Table
 import org.springframework.data.repository.CrudRepository
 import org.springframework.stereotype.Service
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RestController
-import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
+import tern.artic.grpc.ProfileDescriptorOuterClass.ProfileDescriptor
+import tern.artic.grpc.ProfileServiceGrpc.ProfileServiceImplBase
 
 @SpringBootApplication
 class ArticApplication
@@ -38,6 +40,28 @@ class MessageResource(private val service: MessageService) {
 		service.post(message)
 	}
 }
+
+
+@GrpcService
+class GrpcProfileService(private val db: MessageRepository) : ProfileServiceImplBase() {
+	private val log = LoggerFactory.getLogger(GrpcProfileService::class.java)
+	override fun getMessage(request: Empty, responseObserver: StreamObserver<ProfileDescriptor>) {
+		println("getCurrentProfile")
+		val messages = db.findMessages()
+		for ((id, text) in messages) {
+			responseObserver.onNext(
+				ProfileDescriptor
+					.newBuilder()
+					.setProfileId(id)
+					.setText(text)
+					.build()
+			)
+		}
+		responseObserver.onCompleted()
+	} // todo saveMessage
+
+}
+
 
 @Service
 class MessageService(private val db: MessageRepository) {
