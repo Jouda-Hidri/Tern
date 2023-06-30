@@ -14,8 +14,9 @@ import org.springframework.data.relational.core.mapping.Table
 import org.springframework.data.repository.CrudRepository
 import org.springframework.stereotype.Service
 import org.springframework.web.bind.annotation.*
-import tern.artic.grpc.ProfileDescriptorOuterClass
-import tern.artic.grpc.ProfileDescriptorOuterClass.SaveRequest
+import tern.artic.grpc.TernService.GetResponse
+import tern.artic.grpc.TernService.SaveResponse
+import tern.artic.grpc.TernService.SaveRequest
 import tern.artic.grpc.ProfileServiceGrpc
 import tern.artic.grpc.ProfileServiceGrpc.ProfileServiceImplBase
 
@@ -61,12 +62,12 @@ class MessageResource(private val service: MessageService) { // todo replace wit
 @GrpcService
 class GrpcProfileService(private val db: MessageRepository) : ProfileServiceImplBase() {
     private val log = LoggerFactory.getLogger(GrpcProfileService::class.java)
-    override fun getMessage(request: Empty, responseObserver: StreamObserver<ProfileDescriptorOuterClass.GetResponse>) {
+    override fun getMessage(request: Empty, responseObserver: StreamObserver<GetResponse>) {
         println("get messages")
         val messages = db.findMessages()
         for ((id, text) in messages) {
             responseObserver.onNext(
-                ProfileDescriptorOuterClass.GetResponse
+                GetResponse
                     .newBuilder()
                     .setText(text)
                     .build()
@@ -76,13 +77,13 @@ class GrpcProfileService(private val db: MessageRepository) : ProfileServiceImpl
     }
 
     override fun saveMessage(
-        request: ProfileDescriptorOuterClass.SaveRequest,
-        responseObserver: StreamObserver<ProfileDescriptorOuterClass.SaveResponse>
+        request: SaveRequest,
+        responseObserver: StreamObserver<SaveResponse>
     ) {
         println("save message $request")
         var result = db.save(Message(id = null, text = request.text))
         responseObserver.onNext(
-            ProfileDescriptorOuterClass.SaveResponse
+            SaveResponse
                 .newBuilder()
                 .setId(result.id)
                 .build()

@@ -1,7 +1,19 @@
 syntax = "proto3";
 package tern.artic.grpc;
 import "google/protobuf/empty.proto";
-import "profile_descriptor.proto";
+
+message GetResponse {
+  string text = 1;
+}
+
+message SaveRequest {
+  string text = 1;
+}
+
+message SaveResponse {
+  string id = 1;
+}
+
 service ProfileService {
   rpc GetMessage (google.protobuf.Empty) returns (stream GetResponse) {}
   rpc SaveMessage (SaveRequest) returns (SaveResponse);
