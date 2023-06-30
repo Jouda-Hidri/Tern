@@ -58,42 +58,6 @@ class MessageResource(private val service: MessageService) { // todo replace wit
     }
 }
 
-
-@GrpcService
-class GrpcProfileService(private val db: MessageRepository) : ProfileServiceImplBase() {
-    private val log = LoggerFactory.getLogger(GrpcProfileService::class.java)
-    override fun getMessage(request: Empty, responseObserver: StreamObserver<GetResponse>) {
-        println("get messages")
-        val messages = db.findMessages()
-        for ((id, text) in messages) {
-            responseObserver.onNext(
-                GetResponse
-                    .newBuilder()
-                    .setText(text)
-                    .build()
-            )
-        }
-        responseObserver.onCompleted()
-    }
-
-    override fun saveMessage(
-        request: SaveRequest,
-        responseObserver: StreamObserver<SaveResponse>
-    ) {
-        println("save message $request")
-        var result = db.save(Message(id = null, text = request.text))
-        responseObserver.onNext(
-            SaveResponse
-                .newBuilder()
-                .setId(result.id)
-                .build()
-        )
-        responseObserver.onCompleted()
-    }
-
-}
-
-
 @Service
 class MessageService(private val db: MessageRepository) {
     private val logger = LoggerFactory.getLogger(MessageService::class.java)
