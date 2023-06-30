@@ -1,10 +1,5 @@
 package tern.artic
 
-import com.google.protobuf.Empty
-import io.grpc.ManagedChannel
-import io.grpc.ManagedChannelBuilder
-import io.grpc.stub.StreamObserver
-import net.devh.boot.grpc.server.service.GrpcService
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
@@ -14,11 +9,6 @@ import org.springframework.data.relational.core.mapping.Table
 import org.springframework.data.repository.CrudRepository
 import org.springframework.stereotype.Service
 import org.springframework.web.bind.annotation.*
-import tern.artic.grpc.TernService.GetResponse
-import tern.artic.grpc.TernService.SaveResponse
-import tern.artic.grpc.TernService.SaveRequest
-import tern.artic.grpc.ProfileServiceGrpc
-import tern.artic.grpc.ProfileServiceGrpc.ProfileServiceImplBase
 
 
 @SpringBootApplication
@@ -29,32 +19,18 @@ fun main(args: Array<String>) {
 }
 
 @RestController
-class MessageResource(private val service: MessageService) { // todo replace with ArticService
+class MessageResource(private val service: ArticService) { // todo replace with ArticService
     private val logger = LoggerFactory.getLogger(MessageResource::class.java)
-    private var channel: ManagedChannel = ManagedChannelBuilder.forAddress("localhost", 9090)
-        .usePlaintext()
-        .build()
-    private var stub: ProfileServiceGrpc.ProfileServiceBlockingStub = ProfileServiceGrpc.newBlockingStub(channel)
-
     @GetMapping("/")
-    fun index(): List<Message> {
+    fun find(): List<Message> {
         logger.info("GET / - Retrieving messages")
-        val response = stub.getMessage(Empty.getDefaultInstance())
-        val list: MutableList<Message> = mutableListOf()
-        response.forEach { getResponse ->
-            list.add(Message(id = null, text = getResponse.text))
-        }
-        return list
+        return service.find()
     }
 
     @PostMapping("/")
     fun post(@RequestBody message: Message) {
         logger.info("POST / - Posting message: $message")
-        stub.saveMessage(
-            SaveRequest.newBuilder()
-                .setText(message.text)
-                .build()
-        )
+        service.save(message)
     }
 }
 
