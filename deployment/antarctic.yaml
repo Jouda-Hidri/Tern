@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: tern-demo
+  name: antarctic
 spec:
   selector:
     matchLabels:
-      app: tern-demo
+      app: antarctic
   replicas: 1
   template:
     metadata:
       labels:
-        app: tern-demo
+        app: antarctic
     spec:
       containers:
-        - name: tern-demo
-          image: tern-demo:10
+        - name: tern
+          image: tern:17
           imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRES_USER
@@ -33,7 +33,7 @@ spec:
                   name: postgres-config
                   key: postgres_host
           ports:
-            - containerPort: 8080
+            - containerPort: 9090
           resources:
             limits:
               cpu: "1"
@@ -53,26 +53,27 @@ data:
 apiVersion: autoscaling/v1
 kind: HorizontalPodAutoscaler
 metadata:
-  name: tern-demo-hpa
+  name: antarctic-hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: tern-demo
+    name: antarctic
   minReplicas: 1
-  maxReplicas: 10
+  maxReplicas: 1 #10
   targetCPUUtilizationPercentage: 50
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: tern-demo
+  name: antarctic
 spec:
   type: NodePort
   ports:
     - protocol: "TCP"
-      port: 8080
-      targetPort: 8080
+      port: 9090
+      targetPort: 9090
+      nodePort: 30000
   selector:
-    app: tern-demo
+    app: antarctic

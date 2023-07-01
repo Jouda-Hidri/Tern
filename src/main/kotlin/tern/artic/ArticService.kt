@@ -12,7 +12,7 @@ import tern.grpc.TernServiceOuterClass.SaveRequest
 @Service
 class ArticService() {
     private val logger = LoggerFactory.getLogger(ArticService::class.java)
-    private var channel: ManagedChannel = ManagedChannelBuilder.forAddress("localhost", 9090)
+    private var channel: ManagedChannel = ManagedChannelBuilder.forAddress("192.168.59.105", 30000)
         .usePlaintext()
         .build()
     private var stub = TernServiceGrpc.newBlockingStub(channel)
