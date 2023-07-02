@@ -6,7 +6,7 @@ minikube start #(using virtualbox)
 minikube addons enable metrics-server    
 eval $(minikube docker-env)    
 mvn clean install    
-docker build -t tern:1 .    
+docker build -t tern .    
 cd deployment    
 kubectl apply -f artic.yaml    
 kubectl apply -f antartic.yaml    
