@@ -42,7 +42,7 @@ spec:
             claimName: postgresql-claim0
         - name: postgresql-initdb
           configMap:
-            name: postgresql-initdb-config
+            name: postgres-config
 ---
 apiVersion: v1
 kind: Service
@@ -78,7 +78,9 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: postgresql-initdb-config
+  name: postgres-config
 data:
+  postgres_user: postgres
+  postgres_password: password
+  postgres_host: postgresql
   init.sql: CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; CREATE TABLE IF NOT EXISTS messages (id   UUID DEFAULT uuid_generate_v4() PRIMARY KEY,text VARCHAR NOT NULL);
-
