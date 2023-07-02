@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: tern
-          image: tern:20
+          image: tern:23
           imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRES_USER

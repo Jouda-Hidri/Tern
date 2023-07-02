@@ -12,12 +12,13 @@ import tern.grpc.TernServiceOuterClass.SaveRequest
 @Service
 class ArticService() {
     private val logger = LoggerFactory.getLogger(ArticService::class.java)
-    private var channel: ManagedChannel = ManagedChannelBuilder.forAddress("192.168.59.105", 30000)
+    private var channel: ManagedChannel = ManagedChannelBuilder.forTarget("antarctic.default.svc.cluster.local:30000")
         .usePlaintext()
         .build()
     private var stub = TernServiceGrpc.newBlockingStub(channel)
 
     fun find(): List<Message> {
+        logger.info("antarctic.default.svc.cluster.local:30000")
         logger.info("Artic - Retrieving messages")
         val response = stub.getMessage(Empty.getDefaultInstance())
         val list: MutableList<Message> = mutableListOf()

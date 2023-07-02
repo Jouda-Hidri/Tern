@@ -69,11 +69,9 @@ kind: Service
 metadata:
   name: antarctic
 spec:
-  type: NodePort
   ports:
     - protocol: "TCP"
-      port: 9090
+      port: 30000
       targetPort: 9090
-      nodePort: 30000
   selector:
     app: antarctic
