@@ -1,16 +1,35 @@
 # Tern
+Make sure you have Docker, Minikube and maven 3.6.3 installed.    
 
-./mvnw clean package    
-docker-compose up --build
+````
+minikube start #(using virtualbox)    
+minikube addons enable metrics-server    
+eval $(minikube docker-env)    
+mvn clean install    
+docker build -t tern:1 .    
+cd deployment    
+kubectl apply -f artic.yaml    
+kubectl apply -f antartic.yaml    
+kubectl apply -f postgres.yaml
+minikube dashboard
+````
 
-http://localhost:8080/h2-console/
+```kubectl service artic```    
 
-curl -d '{"text":"jouda"}' -H "Content-Type: application/json" -X POST http://localhost:8080    
-curl http://localhost:8080/
+````
+curl -d '{"text":"some-text"}' -H "Content-Type: application/json" -X POST {artic_host}    
+curl {artic_host}
+````
 
-## Locust
-locust    
-http://0.0.0.0:8089/
+## Istio
+Make sure you have istio 1.18 installed.    
 
-Host: http://localhost:8080
+````
+kubectl label namespace default istio-injection=enabled    
 
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/prometheus.yaml    
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/kiali.yaml    
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/grafana.yaml    
+
+istioctl dashboard kiali
+````
