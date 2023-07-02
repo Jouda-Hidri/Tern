@@ -1,4 +1,6 @@
 # Tern
+<img width="766" alt="Screenshot 2023-07-02 at 16 01 47" src="https://github.com/Jouda-Hidri/Tern/assets/30729085/f7c67457-2a28-4841-9a17-edfa6f826a08">
+
 Make sure you have Docker, Minikube and maven 3.6.3 installed.    
 
 ````
