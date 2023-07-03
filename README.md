@@ -36,6 +36,12 @@ curl {artic_host}
 Make sure you have istio 1.18 installed.    
 
 ````
+# to download istio:    
+curl -L https://istio.io/downloadIstio | sh -
+# from inside istio folder
+export PATH=$PWD/bin:$PATH
+istioctl install --set profile=demo -y
+
 kubectl label namespace default istio-injection=enabled    
 
 kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/prometheus.yaml    
