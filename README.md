@@ -25,7 +25,7 @@ kubectl apply -f postgres.yaml
 minikube dashboard
 ````
 
-```kubectl service artic```    
+```minikube service artic```    
 
 ````
 curl -d '{"text":"some-text"}' -H "Content-Type: application/json" -X POST {artic_host}    
