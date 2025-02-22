@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: grpc-curl-job
+spec:
+  schedule: "*/1 * * * *"  # Every minute
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: grpc-curl-container
+              image: tarrunkhosla/grpcio:v1
+              command:
+                - "/bin/sh"
+                - "-c"
+                - |
+                  grpcurl -plaintext -d '{"text":"some-text"}' antarctic.default.svc.cluster.local:30000 tern.grpc.TernService/SaveMessage
+              imagePullPolicy: Always
+          restartPolicy: OnFailure
