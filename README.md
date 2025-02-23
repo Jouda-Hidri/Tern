@@ -64,3 +64,13 @@ kubectl logs grpc-curl-job-29004415-mb5lb
 {
 "id": "91fcb2d7-0284-4fac-bd45-f494e5eecd8f"
 }
+
+### See results
+````
+curl http://127.0.0.1:51308
+````
+
+## Spring CommandLine Runner
+````
+mvn spring-boot:run -Dspring-boot.run.arguments="arg1,arg2,arg3"
+````
