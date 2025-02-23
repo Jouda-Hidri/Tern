@@ -17,6 +17,7 @@ cd deployment
 kubectl apply -f artic.yaml    
 kubectl apply -f antarctic.yaml    
 kubectl apply -f postgres.yaml
+kubectl apply -f grpc-curl-cronjob.yaml
 kubectl apply -f create-cronjob.yaml
 kubectl apply -f update-cronjob.yaml
 minikube dashboard
@@ -68,6 +69,12 @@ kubectl logs grpc-curl-job-29004415-mb5lb
 }
 
 ### See results
+Get Artic service url using 
+
+````
+minikube service artic --url
+````
+And then curl the service
 ````
 curl http://127.0.0.1:51308
 ````

@@ -9,7 +9,6 @@ import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.core.io.buffer.DataBufferUtils
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
-import tern.antarctic.Message
 import tern.grpc.TernServiceGrpc
 import tern.grpc.TernServiceOuterClass.SaveRequest
 import tern.grpc.TernServiceOuterClass.SaveResponse
@@ -17,10 +16,6 @@ import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
 
 
 @Service
@@ -33,20 +28,20 @@ class ArticService() {
     private var stub = TernServiceGrpc.newStub(channel)
     var client: WebClient = WebClient.create("http://tapi.default.svc.cluster.local:5000")
 
-    fun find(): List<Message> {
+    fun find(): List<String> {
         logger.info("Artic - Retrieving messages")
         val response = blockingStub.getMessage(Empty.getDefaultInstance())
-        val list: MutableList<Message> = mutableListOf()
+        val list: MutableList<String> = mutableListOf()
         response.forEach { getResponse ->
-            list.add(Message(id = null, text = getResponse.text))
+            list.add(getResponse.text)
         }
         return list
     }
 
-    fun save(message: Message) {
+    fun save(message: String) {
         logger.info("Artic - Request message: $message")
         stub.saveMessage(
-            SaveRequest.newBuilder().setText(message.text).build(), object : StreamObserver<SaveResponse> {
+            SaveRequest.newBuilder().setText(message).build(), object : StreamObserver<SaveResponse> {
                 override fun onNext(response: SaveResponse?) {
                     // todo possible to use response as path param
                     logger.warn("Artic - $response")

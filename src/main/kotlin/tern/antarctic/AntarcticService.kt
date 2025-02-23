@@ -8,16 +8,16 @@ import tern.grpc.TernServiceGrpc
 import tern.grpc.TernServiceOuterClass.*
 
 @GrpcService
-class AntarcticService(private val db: MessageRepository) : TernServiceGrpc.TernServiceImplBase() {
+class AntarcticService() : TernServiceGrpc.TernServiceImplBase() {
     private val logger = LoggerFactory.getLogger(AntarcticService::class.java)
+    private val list = ArrayList<String>()
     override fun getMessage(request: Empty, responseObserver: StreamObserver<GetResponse>) {
         logger.info("Antartic - Retrieving messages")
-        val messages = db.findMessages()
-        for ((id, text) in messages) {
+        for (message in list) {
             responseObserver.onNext(
                 GetResponse
                     .newBuilder()
-                    .setText(text)
+                    .setText(message)
                     .build()
             )
         }
@@ -28,12 +28,12 @@ class AntarcticService(private val db: MessageRepository) : TernServiceGrpc.Tern
         request: SaveRequest,
         responseObserver: StreamObserver<SaveResponse>
     ) {
-        logger.info("Antartic - Request messages")
-        var result = db.save(Message(id = null, text = request.text))
+        logger.info("Antartic - Save message {}", request.text)
+        list.add(request.text)
         responseObserver.onNext(
             SaveResponse
                 .newBuilder()
-                .setId(result.id)
+                .setId(list.lastIndex.toString())
                 .build()
         )
         responseObserver.onCompleted()
