@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: update-cronjob
+spec:
+  schedule: "*/2 * * * *"  # Runs every 1 minute
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: update-cronjob
+              image: tern:latest
+              imagePullPolicy: Never
+              args: ["update"]
+          restartPolicy: Never

@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: create-cronjob
+spec:
+  schedule: "*/1 * * * *"  # Runs every 1 minute
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: create-cronjob
+              image: tern:latest
+              imagePullPolicy: Never
+              args: ["create"]
+          restartPolicy: Never

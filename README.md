@@ -17,6 +17,8 @@ cd deployment
 kubectl apply -f artic.yaml    
 kubectl apply -f antarctic.yaml    
 kubectl apply -f postgres.yaml
+kubectl apply -f create-cronjob.yaml
+kubectl apply -f update-cronjob.yaml
 minikube dashboard
 ````
 
