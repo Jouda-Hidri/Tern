@@ -1,7 +1,8 @@
 # Tern
 
-Artic receives a HTTP request and forwards it as a gRPC request to Antarctic.
-Here we call using grpcurl Antarctic using command line and using K8s CronJob
+HTTP Artic -> gRPC Antarctic    
+K8s CronJob -> gRPC Antarctic   
+K8s CronJob -> SpringBatch
 
 ## Setup
 
@@ -15,14 +16,19 @@ mvn clean install
 docker build -t tern .    
 cd deployment    
 kubectl apply -f artic.yaml    
-kubectl apply -f antarctic.yaml    
-kubectl apply -f postgres.yaml
-kubectl apply -f grpc-curl-cronjob.yaml
-kubectl apply -f create-cronjob.yaml
-kubectl apply -f update-cronjob.yaml
+kubectl apply -f antarctic.yaml  
+kubectl apply -f postgres.yaml  
+kubectl apply -f grpcurl-cronjob.yaml    
+kubectl apply -f job1-batch-cronjob.yaml    
+kubectl apply -f job2-batch-cronjob.yaml    
 minikube dashboard
 ````
 
+## SrpingBatch
+````
+cd target/
+java -jar artic-0.0.1-SNAPSHOT.jar job1
+````
 ## Grpcurl
 ````
 minikube service antarctic --url
@@ -45,10 +51,7 @@ grpcurl -plaintext -d '{"text":"some-text"}' 127.0.0.1:51377 tern.grpc.TernServi
 }
 
 
-## K8s CronJon
-````
-kubectl apply -f grpc-curl-cronjob.yaml
-````
+## K8s CronJob
 ### Watch jobs
 ````
 kubectl get jobs --watch
@@ -77,9 +80,4 @@ minikube service artic --url
 And then curl the service
 ````
 curl http://127.0.0.1:51308
-````
-
-## Spring CommandLine Runner
-````
-mvn spring-boot:run -Dspring-boot.run.arguments="arg1,arg2,arg3"
 ````

@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: grpc-curl-job
+  name: grpcurl-job
 spec:
   schedule: "*/1 * * * *"  # Every minute
   jobTemplate:
@@ -9,7 +9,7 @@ spec:
       template:
         spec:
           containers:
-            - name: grpc-curl-container
+            - name: grpcurl-container
               image: tarrunkhosla/grpcio:v1
               command:
                 - "/bin/sh"

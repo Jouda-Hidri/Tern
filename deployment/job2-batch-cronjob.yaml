@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: job2-batch-cronjob
+spec:
+  schedule: "*/2 * * * *"  # Trigger every 2 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: job2-batch-cronjob
+              image: tern:latest
+              imagePullPolicy: Never
+              command: ["java", "-jar", "app.jar", "job2"]
+          restartPolicy: OnFailure
