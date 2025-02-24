@@ -66,10 +66,6 @@
             <artifactId>spring-data-jdbc</artifactId>
             <!--			<version>1.0.0.M1</version>-->
         </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-        </dependency>
 
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -156,45 +152,6 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
-            <!--plugin>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-maven-plugin</artifactId>
-                <configuration>
-                    <compilerPlugins>
-                        <plugin>jpa</plugin>
-                        <plugin>spring</plugin>
-                    </compilerPlugins>
-                    <args>
-                        <arg>-Xjsr305=strict</arg>
-                    </args>
-                </configuration>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.jetbrains.kotlin</groupId>
-                        <artifactId>kotlin-maven-noarg</artifactId>
-                        <version>${kotlin.version}</version>
-                    </dependency>
-                    <dependency>
-                        <groupId>org.jetbrains.kotlin</groupId>
-                        <artifactId>kotlin-maven-allopen</artifactId>
-                        <version>${kotlin.version}</version>
-                    </dependency>
-                </dependencies>
-            </plugin-->
-            <!--			<plugin>-->
-            <!--				<artifactId>kotlin-maven-plugin</artifactId>-->
-            <!--				<groupId>org.jetbrains.kotlin</groupId>-->
-            <!--				<configuration>-->
-            <!--					<compilerPlugins>-->
-            <!--						<plugin>all-open</plugin>-->
-            <!--					</compilerPlugins>-->
-            <!--					<pluginOptions>-->
-            <!--						<option>all-open:annotation=javax.persistence.Entity</option>-->
-            <!--						<option>all-open:annotation=javax.persistence.Embeddable</option>-->
-            <!--						<option>all-open:annotation=javax.persistence.MappedSuperclass</option>-->
-            <!--					</pluginOptions>-->
-            <!--				</configuration>-->
-            <!--			</plugin>-->
             <plugin>
                 <groupId>org.xolstice.maven.plugins</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
