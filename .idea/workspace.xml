@@ -25,10 +25,10 @@
     <list default="true" id="cb3a51df-6804-432c-9266-3511762f1448" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/deployment/antarctic.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/deployment/antarctic.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/deployment/artic.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/deployment/artic.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/deployment/postgres.yaml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/deployment/create-cronjob.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/deployment/curl-cronjob.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/deployment/update-cronjob.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/kotlin/tern/jobs/BatchConfig.kt" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/kotlin/tern/jobs/BatchConfig.kt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
