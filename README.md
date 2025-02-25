@@ -1,4 +1,6 @@
 # Tern
+We are using the service Tern, having 2 kubernetes deployments Artic (HTTP) and Antarctic (gRPC).    
+We are using a K8s cronjob to talk to the gRPC service.    
 
 HTTP Artic -> gRPC Antarctic    
 K8s CronJob (grpcurl) -> gRPC Antarctic   
