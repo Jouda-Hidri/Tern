@@ -1,0 +1,45 @@
+# The purpose of this workflow is to measure one of the DORA metrics:
+# Lead Time for Changes (LT)
+# currently only measuring from first commit until PR merge
+name: Measure DORA LT
+
+on:
+  pull_request:
+    types: [closed]  # Trigger when PR is merged/closed
+
+jobs:
+  measure-lead-time:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Get PR info
+        id: pr
+        uses: octokit/request-action@v5
+        with:
+          route: GET /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}
+
+      - name: Get first commit date
+        id: first-commit
+        run: |
+          # Get all commits for the PR
+          PR_COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits --jq '.commits[].oid')
+          # Get the earliest commit date
+          FIRST_COMMIT_DATE=$(git show -s --format=%cI $(echo $PR_COMMITS | awk '{print $1}'))
+          echo "first_commit_date=$FIRST_COMMIT_DATE" >> $GITHUB_OUTPUT
+
+      - name: Get merge date
+        run: |
+          MERGE_DATE=$(date -d "${{ steps.pr.outputs.data }}" +"%Y-%m-%dT%H:%M:%S%z")
+          echo "merge_date=$MERGE_DATE"
+
+      - name: Calculate Lead Time
+        run: |
+          FIRST=$(date -d "${{ steps.first-commit.outputs.first_commit_date }}" +%s)
+          MERGE=$(date -d "${{ github.event.pull_request.merged_at }}" +%s)
+          LEAD_TIME=$((MERGE - FIRST))
+          echo "Lead time (seconds): $LEAD_TIME"
+          # Optional: convert to hours/days
+          echo "Lead time (hours): $((LEAD_TIME/3600))"
