@@ -41,9 +41,16 @@ jobs:
 
       - name: Calculate Lead Time
         run: |
+          # Convert first commit date to seconds since epoch
           FIRST=$(date -d "${{ steps.first-commit.outputs.first_commit_date }}" +%s)
+          
+          # Convert PR merge date to seconds since epoch
           MERGE=$(date -d "${{ github.event.pull_request.merged_at }}" +%s)
+          
+          # Calculate Lead Time in seconds
           LEAD_TIME=$((MERGE - FIRST))
+          
           echo "Lead time (seconds): $LEAD_TIME"
-          echo "Lead time (hours): $((LEAD_TIME/3600))"
+          echo "Lead time (hours): $((LEAD_TIME / 3600))"
+
 
