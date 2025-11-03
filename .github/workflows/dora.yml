@@ -17,6 +17,7 @@ jobs:
         uses: octokit/request-action@v2.4.0
         with:
           route: GET /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get first commit date
         id: first-commit
