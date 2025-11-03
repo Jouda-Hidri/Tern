@@ -21,6 +21,8 @@ jobs:
 
       - name: Get first commit date
         id: first-commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # <- Add this
         run: |
           PR_COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits --jq '.commits[].oid')
           FIRST_COMMIT_DATE=$(git show -s --format=%cI $(echo $PR_COMMITS | awk '{print $1}'))
