@@ -46,3 +46,4 @@ jobs:
           LEAD_TIME=$((MERGE - FIRST))
           echo "Lead time (seconds): $LEAD_TIME"
           echo "Lead time (hours): $((LEAD_TIME/3600))"
+
