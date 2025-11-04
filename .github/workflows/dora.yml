@@ -1,0 +1,52 @@
+name: DORA Lead Time
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  lead-time:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # get all commits, needed for first commit date
+
+      - name: Get first commit date
+        id: first_commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get the first commit SHA in the PR
+          FIRST_COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json commits --jq '.commits[0].oid')
+          echo "First commit SHA: $FIRST_COMMIT_SHA"
+
+          # Get the commit date in ISO format
+          FIRST_COMMIT_DATE=$(git show -s --format=%cI "$FIRST_COMMIT_SHA")
+          echo "First commit date: $FIRST_COMMIT_DATE"
+
+          echo "first_commit_date=$FIRST_COMMIT_DATE" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate Lead Time
+        run: |
+          # merged_at comes directly from the PR event payload, ISO 8601 already
+          MERGED_AT="${{ github.event.pull_request.merged_at }}"
+          FIRST_COMMIT_DATE="${{ steps.first_commit.outputs.first_commit_date }}"
+
+          echo "Merged at: $MERGED_AT"
+          echo "First commit: $FIRST_COMMIT_DATE"
+
+          # Convert both to epoch seconds
+          FIRST=$(date -d "$FIRST_COMMIT_DATE" +%s)
+          MERGE=$(date -d "$MERGED_AT" +%s)
+
+          LEAD_TIME_SEC=$((MERGE - FIRST))
+          LEAD_TIME_HOURS=$((LEAD_TIME_SEC / 3600))
+          LEAD_TIME_DAYS=$((LEAD_TIME_SEC / 86400))
+
+          echo "Lead time (seconds): $LEAD_TIME_SEC"
+          echo "Lead time (hours): $LEAD_TIME_HOURS"
+          echo "Lead time (days): $LEAD_TIME_DAYS"
