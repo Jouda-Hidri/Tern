@@ -1,56 +1,52 @@
-name: Measure DORA LT
+name: DORA Lead Time
 
 on:
   pull_request:
-    types: [closed]  # Trigger when PR is merged/closed
+    types: [closed]
 
 jobs:
-  measure-lead-time:
+  lead-time:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
-      - name: Get PR info
-        id: pr
-        uses: octokit/request-action@v2.4.0
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          route: GET /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0   # get all commits, needed for first commit date
 
       - name: Get first commit date
-        id: first-commit
+        id: first_commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get all commit SHAs for the PR
-          PR_COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits --jq '.commits[].oid')
-          
-          # Fetch all commits so git can access them
-          git fetch origin +refs/pull/${{ github.event.pull_request.number }}/head
-          
-          # Get the date of the first commit
-          FIRST_COMMIT_DATE=$(git show -s --format=%cI $(echo $PR_COMMITS | awk '{print $1}'))
-          echo "first_commit_date=$FIRST_COMMIT_DATE" >> $GITHUB_OUTPUT
+          # Get the first commit SHA in the PR
+          FIRST_COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json commits --jq '.commits[0].oid')
+          echo "First commit SHA: $FIRST_COMMIT_SHA"
 
-      - name: Get merge date
-        run: |
-          MERGE_DATE=$(date -d "${{ steps.pr.outputs.data }}" +"%Y-%m-%dT%H:%M:%S%z")
-          echo "merge_date=$MERGE_DATE"
+          # Get the commit date in ISO format
+          FIRST_COMMIT_DATE=$(git show -s --format=%cI "$FIRST_COMMIT_SHA")
+          echo "First commit date: $FIRST_COMMIT_DATE"
+
+          echo "first_commit_date=$FIRST_COMMIT_DATE" >> "$GITHUB_OUTPUT"
 
       - name: Calculate Lead Time
         run: |
-          # Convert first commit date to seconds since epoch
-          FIRST=$(date -d "${{ steps.first-commit.outputs.first_commit_date }}" +%s)
-          
-          # Convert PR merge date to seconds since epoch
-          MERGE=$(date -d "${{ github.event.pull_request.merged_at }}" +%s)
-          
-          # Calculate Lead Time in seconds
-          LEAD_TIME=$((MERGE - FIRST))
-          
-          echo "Lead time (seconds): $LEAD_TIME"
-          echo "Lead time (hours): $((LEAD_TIME / 3600))"
+          # merged_at comes directly from the PR event payload, ISO 8601 already
+          MERGED_AT="${{ github.event.pull_request.merged_at }}"
+          FIRST_COMMIT_DATE="${{ steps.first_commit.outputs.first_commit_date }}"
 
+          echo "Merged at: $MERGED_AT"
+          echo "First commit: $FIRST_COMMIT_DATE"
 
+          # Convert both to epoch seconds
+          FIRST=$(date -d "$FIRST_COMMIT_DATE" +%s)
+          MERGE=$(date -d "$MERGED_AT" +%s)
+
+          LEAD_TIME_SEC=$((MERGE - FIRST))
+          LEAD_TIME_HOURS=$((LEAD_TIME_SEC / 3600))
+          LEAD_TIME_DAYS=$((LEAD_TIME_SEC / 86400))
+
+          echo "Lead time (seconds): $LEAD_TIME_SEC"
+          echo "Lead time (hours): $LEAD_TIME_HOURS"
+          echo "Lead time (days): $LEAD_TIME_DAYS"
