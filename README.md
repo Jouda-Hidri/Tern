@@ -15,6 +15,40 @@ Make sure you have Docker and maven 3.6.3 installed.
 mvn clean package
 docker-compose up --build
 
+Compose mirrors the Kubernetes topology: the same image runs twice, as `artic` (REST, port 8080)
+and as `antarctic` (gRPC, port 9090), alongside postgres.
+
+#### Following a request end to end
+
+Every log line carries `[service] [requestId]`, and the id is propagated from the HTTP request
+through the gRPC hop, so a single request can be followed across both services:
+
+````
+docker compose logs -f                    # live, interleaved across services
+docker compose logs | grep b5483e6a       # one request, both services
+curl -i -X POST localhost:8080/ -d '{"text":"hi"}' -H 'Content-Type: application/json'
+                                          # response carries X-Request-Id: b5483e6a
+````
+
+Which gives:
+
+````
+artic     [b5483e6a] HTTP --> POST / - request received
+artic     [b5483e6a] POST / - Posting message: Message(id=null, text=hi)
+artic     [b5483e6a] gRPC --> tern.grpc.TernService/SaveMessage - calling antarctic
+artic     [b5483e6a] HTTP <-- POST / - responded 200 in 40 ms
+antarctic [b5483e6a] gRPC --> tern.grpc.TernService/SaveMessage - call received
+antarctic [b5483e6a] Antartic - Saved message 1a8d4dbd-... to the database
+antarctic [b5483e6a] gRPC <-- tern.grpc.TernService/SaveMessage - OK in 84 ms
+artic     [b5483e6a] gRPC <-- tern.grpc.TernService/SaveMessage - OK in 121 ms
+artic     [b5483e6a] Artic - Completed
+````
+
+The POST responds before antarctic finishes because `save()` uses the async stub; the request id
+still ties the later callback lines back to the same request. Calls made straight to the gRPC port
+(`localhost:9090`) without the header get an id generated on the antarctic side, so they are
+traceable too.
+
 ### Option 2: using kubernetes and Minikube
 
 Make sure you have Minikube installed.    

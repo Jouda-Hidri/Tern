@@ -32,6 +32,8 @@ spec:
                 configMapKeyRef:
                   name: postgres-config
                   key: postgres_host
+            - name: SERVICE_NAME
+              value: "antarctic"
           ports:
             - containerPort: 9090
           resources:

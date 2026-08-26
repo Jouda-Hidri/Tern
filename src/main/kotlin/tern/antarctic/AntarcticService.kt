@@ -13,6 +13,7 @@ class AntarcticService(private val db: MessageRepository) : TernServiceGrpc.Tern
     override fun getMessage(request: Empty, responseObserver: StreamObserver<GetResponse>) {
         logger.info("Antartic - Retrieving messages")
         val messages = db.findMessages()
+        logger.info("Antartic - Read ${messages.size} message(s) from the database")
         for ((id, text) in messages) {
             responseObserver.onNext(
                 GetResponse
@@ -30,6 +31,7 @@ class AntarcticService(private val db: MessageRepository) : TernServiceGrpc.Tern
     ) {
         logger.info("Antartic - Request messages")
         var result = db.save(Message(id = null, text = request.text))
+        logger.info("Antartic - Saved message ${result.id} to the database")
         responseObserver.onNext(
             SaveResponse
                 .newBuilder()

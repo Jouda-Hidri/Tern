@@ -32,6 +32,12 @@ spec:
                 configMapKeyRef:
                   name: postgres-config
                   key: postgres_host
+            - name: SERVICE_NAME
+              value: "artic"
+            - name: ANTARCTIC_TARGET
+              value: "antarctic.default.svc.cluster.local:30000"
+            - name: TAPI_URL
+              value: "http://tapi.default.svc.cluster.local:5000"
           ports:
             - containerPort: 8080
           resources:

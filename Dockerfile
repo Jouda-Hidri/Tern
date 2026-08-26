@@ -1,4 +1,4 @@
-FROM openjdk:11
+FROM eclipse-temurin:11-jre
 VOLUME /tmp
 EXPOSE 8080
 ADD target/artic-0.0.1-SNAPSHOT.jar app.jar
