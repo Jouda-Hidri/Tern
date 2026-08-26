@@ -1,4 +1,4 @@
-### Post 'Hello!"
+### Post 'Hello!" - answers 201 with the persisted message and its id
 POST http://localhost:8080/
 Content-Type: application/json
 
@@ -26,3 +26,20 @@ Content-Type: application/json
 
 ### Get all the messages
 GET http://localhost:8080/
+
+### Blank text is rejected with 400 and an error body carrying the request id
+POST http://localhost:8080/
+Content-Type: application/json
+
+{
+  "text": "  "
+}
+
+### Reuse a known request id, to grep it straight out of `docker compose logs`
+POST http://localhost:8080/
+Content-Type: application/json
+X-Request-Id: my-trace
+
+{
+  "text": "Traceable!"
+}

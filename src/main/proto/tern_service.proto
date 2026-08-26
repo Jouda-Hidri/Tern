@@ -4,6 +4,7 @@ import "google/protobuf/empty.proto";
 
 message GetResponse {
   string text = 1;
+  string id = 2;
 }
 
 message SaveRequest {

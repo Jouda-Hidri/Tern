@@ -1,0 +1,7 @@
+target/
+.idea/
+.git/
+.github/
+deployment/
+*.iml
+README.md
