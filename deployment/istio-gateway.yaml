@@ -1,0 +1,32 @@
+# Without this, traffic reaches artic through kubectl port-forward, which bypasses the mesh -
+# so Istio records only the artic-to-antarctic hop and no inbound HTTP at all.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: tern-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*"
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: tern
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - tern-gateway
+  http:
+    - route:
+        - destination:
+            host: artic
+            port:
+              number: 8080

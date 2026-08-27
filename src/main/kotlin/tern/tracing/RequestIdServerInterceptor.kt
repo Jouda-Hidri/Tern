@@ -9,10 +9,6 @@ import io.grpc.ServerInterceptor
 import io.grpc.Status
 import org.slf4j.LoggerFactory
 
-/**
- * Other end of the hop: picks the request id off the gRPC metadata so antarctic's log lines
- * carry the same id as the artic ones, and logs when the call arrives and how it finished.
- */
 class RequestIdServerInterceptor : ServerInterceptor {
     private val log = LoggerFactory.getLogger(RequestIdServerInterceptor::class.java)
 
@@ -40,8 +36,7 @@ class RequestIdServerInterceptor : ServerInterceptor {
             next.startCall(tracedCall, headers)
         }
 
-        // gRPC may hand the callbacks to a different thread than the one above, so the MDC
-        // has to be re-applied around each of them.
+        // gRPC may run the callbacks on another thread, so the MDC is re-applied around each.
         return object : ForwardingServerCallListener.SimpleForwardingServerCallListener<ReqT>(delegate) {
             override fun onMessage(message: ReqT) =
                 RequestId.withRequestId(requestId) { super.onMessage(message) }

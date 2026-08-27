@@ -4,8 +4,9 @@ tern:
   # Defaults are the Kubernetes service addresses; docker-compose overrides them via env.
   antarctic:
     target: ${ANTARCTIC_TARGET:antarctic.default.svc.cluster.local:30000}
-  tapi:
-    url: ${TAPI_URL:http://tapi.default.svc.cluster.local:5000}
+    # Bounds every gRPC call. Without it an unreachable antarctic makes callers wait for the
+    # servlet async timeout and answers 500, instead of failing fast with a 503.
+    deadline: ${ANTARCTIC_DEADLINE:2s}
   translate:
     # Third-party language detection. Points at the LibreTranslate container that
     # `docker compose --profile translate up` runs; set it to https://libretranslate.com
@@ -32,6 +33,17 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
+  metrics:
+    tags:
+      # Lets one Prometheus scrape both roles and tell them apart.
+      application: ${SERVICE_NAME:tern}
+    distribution:
+      # Without buckets Micrometer only reports count, sum and max - enough for a mean, not
+      # for a percentile. These make histogram_quantile() work in Prometheus.
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 50ms,100ms,250ms,500ms,1s,2s,5s
   endpoint:
     health:
       probes:

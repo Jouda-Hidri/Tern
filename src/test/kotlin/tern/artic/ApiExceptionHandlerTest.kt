@@ -8,8 +8,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.springframework.http.HttpStatus
-import tern.domain.InvalidMessageException
-import tern.domain.MessageText
 
 /**
  * The mapping is worth testing on its own: an antarctic outage reaching the caller as a 500
@@ -47,20 +45,18 @@ class ApiExceptionHandlerTest {
         assertThat(runtime.body?.message).isEqualTo(checked.body?.message)
     }
 
-    @Test
-    fun `a domain validation failure is the caller's fault, not ours`() {
-        val response = handler.onInvalidMessage(InvalidMessageException("Message text must not be blank"))
 
-        assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
-        assertThat(response.body?.message).contains("must not be blank")
+    /**
+     * Guards the domain's `requireValid` helper. If the value classes went back to stdlib
+     * `require`, they would throw plain IllegalArgumentException - and if this handler were
+     * widened to catch that, a genuine internal bug would be reported to the caller as a 400.
+     */
+    @Test
+    fun `a plain IllegalArgumentException is our bug, not the caller's`() {
+        val response = handler.onUnexpectedFailure(IllegalArgumentException("an internal bug"))
+
+        assertThat(response.statusCode).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR)
+        assertThat(response.body?.message).doesNotContain("an internal bug")
     }
 
-    @Test
-    fun `value class validation surfaces through the same handler`() {
-        val thrown = runCatching { MessageText("  ") }.exceptionOrNull()
-
-        assertThat(thrown).isInstanceOf(InvalidMessageException::class.java)
-        assertThat(handler.onInvalidMessage(thrown as InvalidMessageException).statusCode)
-            .isEqualTo(HttpStatus.BAD_REQUEST)
-    }
 }

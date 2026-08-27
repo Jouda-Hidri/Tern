@@ -2,63 +2,76 @@ package tern.artic
 
 import com.google.protobuf.Empty
 import io.grpc.ManagedChannel
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.slf4j.MDCContext
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.DisposableBean
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
-import tern.domain.Message
-import tern.domain.MessageId
+import tern.antarctic.Message
 import tern.grpc.TernServiceGrpcKt
-import tern.tapi.TapiDownloader
-import tern.translate.Detection
+import tern.grpc.TernServiceOuterClass.SaveRequest
+import tern.grpc.TernServiceOuterClass.UpdateLanguageRequest
+import tern.tracing.RequestId
 import tern.translate.LanguageDetector
-import tern.transport.toDomain
-import tern.transport.toSaveRequest
+import java.time.Duration
+import java.util.concurrent.TimeUnit
 
 @Service
 class ArticService(
     channel: ManagedChannel,
     private val languageDetector: LanguageDetector,
-    private val tapiDownloader: TapiDownloader,
-) {
+    @Value("\${tern.antarctic.deadline:2s}") private val deadline: Duration,
+) : DisposableBean {
     private val logger = LoggerFactory.getLogger(ArticService::class.java)
+    private val antarctic = TernServiceGrpcKt.TernServiceCoroutineStub(channel)
 
-    /** Built lazily, so the channel is only dialled once something actually needs it. */
-    private val antarctic by lazy { TernServiceGrpcKt.TernServiceCoroutineStub(channel) }
+    // Detection runs after the response has been sent, so it needs a scope that outlives the
+    // request but not the application. SupervisorJob keeps one failure from cancelling others.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("detect"))
 
-    /**
-     * GetMessage is server-streaming, so the natural return type is a [Flow]: messages are
-     * mapped as they arrive rather than after the last one has landed.
-     */
-    fun findAsFlow(): Flow<Message> {
-        logger.debug("Artic - Retrieving messages")
-        return antarctic.getMessage(Empty.getDefaultInstance()).map { it.toDomain() }
+    // Without a deadline an unreachable antarctic is waited on rather than failing.
+    private fun stub() = antarctic.withDeadlineAfter(deadline.toMillis(), TimeUnit.MILLISECONDS)
+
+    suspend fun find(): List<Message> {
+        logger.info("Artic - Retrieving messages")
+        return stub().getMessage(Empty.getDefaultInstance())
+            .messagesList
+            .map { Message(id = it.id.ifEmpty { null }, text = it.text, language = it.language) }
     }
 
-    suspend fun find(): List<Message> = findAsFlow().toList()
-        .also { logger.debug("Artic - Received ${it.size} message(s) from antarctic") }
-
-    /**
-     * Saves through antarctic and returns the persisted message. Suspends rather than blocking,
-     * but still waits for the outcome: an earlier version answered the caller before the write
-     * had happened, so a failure downstream was reported to them as success.
-     */
     suspend fun save(message: Message): Message {
-        logger.debug("Artic - Saving message: ${message.text}")
+        logger.info("Artic - Request message: ${message.text}")
+        val response = stub().saveMessage(SaveRequest.newBuilder().setText(message.text).build())
+        val saved = message.copy(id = response.id)
 
-        // Detected here rather than in antarctic so the third-party call stays on the edge, and
-        // travels on with the message. Absent when the detector is down - by design.
-        val enriched = when (val detection = languageDetector.detect(message.text)) {
-            is Detection.Detected -> message.copy(language = detection.code)
-            Detection.Unrecognised, Detection.Unavailable -> message
-        }
-
-        val response = antarctic.saveMessage(enriched.toSaveRequest())
-        val saved = enriched.copy(id = MessageId.of(response.id))
-        logger.debug("Artic - Antarctic saved message ${saved.id}")
-
-        tapiDownloader.download()
+        detectLanguageInBackground(saved)
         return saved
     }
+
+    private fun detectLanguageInBackground(message: Message) {
+        val id = message.id ?: return
+        // Carried explicitly: the launched coroutine starts with an empty MDC, so without this
+        // the update would be logged - and traced to antarctic - under a new request id.
+        val mdc = MDCContext(mapOf(RequestId.MDC_KEY to (RequestId.current() ?: "")))
+        scope.launch(mdc) {
+            val language = languageDetector.detect(message.text)
+            if (language.isEmpty()) return@launch
+            try {
+                stub().updateLanguage(
+                    UpdateLanguageRequest.newBuilder().setId(id).setLanguage(language).build()
+                )
+                logger.info("Artic - Language of $id is $language")
+            } catch (e: Exception) {
+                logger.warn("Artic - Could not store language: ${e.message}")
+            }
+        }
+    }
+
+    override fun destroy() = scope.cancel("Application is shutting down")
 }

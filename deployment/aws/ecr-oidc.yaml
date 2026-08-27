@@ -56,17 +56,32 @@ Resources:
       # Mutable because CD moves the `latest` tag; the sha- tags it also pushes are the ones
       # a deployment should ever name.
       ImageTagMutability: MUTABLE
+      # Every build produces a distinct image of roughly 340MB - the jar differs each time, so
+      # layers are not shared between builds. At that size the free tier holds one image, and
+      # keeping ten meant quietly running several times over it.
       LifecyclePolicy:
         LifecyclePolicyText: |
           {
             "rules": [
               {
                 "rulePriority": 1,
-                "description": "Keep the 10 most recent images; untagged and old builds cost money",
+                "description": "Drop untagged images promptly - each `latest` move orphans one",
                 "selection": {
-                  "tagStatus": "any",
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 1
+                },
+                "action": { "type": "expire" }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Keep only the last two tagged builds, to stay inside the free tier",
+                "selection": {
+                  "tagStatus": "tagged",
+                  "tagPrefixList": ["sha-"],
                   "countType": "imageCountMoreThan",
-                  "countNumber": 10
+                  "countNumber": 2
                 },
                 "action": { "type": "expire" }
               }

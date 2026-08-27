@@ -1,40 +1,21 @@
 package tern.artic
 
-import tern.domain.Message
-import tern.domain.MessageText
+import tern.antarctic.Message
+import javax.validation.constraints.NotBlank
+import javax.validation.constraints.Size
 
-/**
- * REST payloads. Separate from the domain so the published API is an explicit choice rather
- * than whatever the domain happens to look like today.
- */
-data class MessageRequest(val text: String) {
-    fun toDomain(): Message = Message(MessageText(text))
+data class MessageRequest(
+    @field:NotBlank(message = "text must not be blank")
+    @field:Size(max = 1000, message = "text must be at most 1000 characters")
+    val text: String,
+) {
+    fun toMessage(): Message = Message(id = null, text = text)
 }
 
-data class MessageResponse(val id: String?, val text: String, val language: String?) {
+// Neither the database id nor the detected language belongs here: one is a persistence detail,
+// the other is derived metadata reported by /stats.
+data class MessageResponse(val text: String) {
     companion object {
-        fun fromDomain(message: Message): MessageResponse = MessageResponse(
-            id = message.id?.toString(),
-            text = message.text.value,
-            language = message.language?.value,
-        )
-    }
-}
-
-/**
- * A breakdown of what has been stored, by detected language. `unknown` counts the messages
- * saved while the detector was unavailable.
- */
-data class MessageStats(val total: Int, val byLanguage: Map<String, Int>) {
-    companion object {
-        private const val UNKNOWN = "unknown"
-
-        fun of(messages: List<Message>): MessageStats = MessageStats(
-            total = messages.size,
-            byLanguage = messages
-                .groupingBy { it.language?.value ?: UNKNOWN }
-                .eachCount()
-                .toSortedMap(compareBy({ it == UNKNOWN }, { it })),  // unknown last, rest A-Z
-        )
+        fun from(message: Message): MessageResponse = MessageResponse(text = message.text)
     }
 }

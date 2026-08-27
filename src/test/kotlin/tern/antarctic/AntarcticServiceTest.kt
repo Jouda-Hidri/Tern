@@ -3,82 +3,77 @@ package tern.antarctic
 import com.google.protobuf.Empty
 import io.grpc.Status
 import io.grpc.StatusException
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.toList
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import kotlin.test.assertFailsWith
-import tern.domain.LanguageCode
-import tern.domain.Message
-import tern.domain.MessageId
-import tern.domain.MessageText
 import tern.grpc.TernServiceOuterClass.SaveRequest
-import java.util.UUID
+import kotlin.test.assertFailsWith
 
-/**
- * On the coroutine base class there is no observer to stub: the streaming call is a Flow to
- * collect and the unary one a suspend function to await, so the assertions are on values.
- */
 class AntarcticServiceTest {
 
-    private val messages = mockk<MessageService>()
-    private val service = AntarcticService(messages)
+    private val db = mockk<MessageRepository>()
+    private val service = AntarcticService(db)
 
     @Test
-    fun `streams every stored message back, id and language included`() = runTest {
-        val id = UUID.randomUUID()
-        every { messages.findAll() } returns
-            flow { emit(Message(MessageId(id), MessageText("Hello!"), LanguageCode("en"))) }
+    fun `returns every stored message, id and language included`() = runTest {
+        every { db.findMessages() } returns listOf(Message("an-id", "Hello!", "en"))
 
-        val sent = service.getMessage(Empty.getDefaultInstance()).toList()
+        val response = service.getMessage(Empty.getDefaultInstance())
 
-        assertThat(sent).hasSize(1)
-        assertThat(sent.first().text).isEqualTo("Hello!")
-        assertThat(sent.first().id).isEqualTo(id.toString())
-        assertThat(sent.first().language).isEqualTo("en")
+        assertThat(response.messagesList).hasSize(1)
+        assertThat(response.getMessages(0).id).isEqualTo("an-id")
+        assertThat(response.getMessages(0).text).isEqualTo("Hello!")
+        assertThat(response.getMessages(0).language).isEqualTo("en")
     }
 
     @Test
-    fun `answers a save with the assigned id`() = runTest {
-        val id = UUID.randomUUID()
-        coEvery { messages.save(any()) } returns Message(MessageId(id), MessageText("Bonjour!"))
+    fun `a message with no detected language is sent as an empty string`() = runTest {
+        every { db.findMessages() } returns listOf(Message("an-id", "Hello!", ""))
 
-        val response = service.saveMessage(SaveRequest.newBuilder().setText("Bonjour!").build())
-
-        assertThat(response.id).isEqualTo(id.toString())
+        assertThat(service.getMessage(Empty.getDefaultInstance()).getMessages(0).language).isEqualTo("")
     }
 
     @Test
-    fun `rejects a blank message as INVALID_ARGUMENT rather than letting it become UNKNOWN`() = runTest {
-        val thrown = assertFailsWith<StatusException> {
-            service.saveMessage(SaveRequest.newBuilder().setText("  ").build())
-        }
+    fun `an empty database is not an error`() = runTest {
+        every { db.findMessages() } returns emptyList()
 
-        assertThat(thrown.status.code).isEqualTo(Status.Code.INVALID_ARGUMENT)
+        assertThat(service.getMessage(Empty.getDefaultInstance()).messagesList).isEmpty()
     }
 
     @Test
-    fun `a database failure on save becomes INTERNAL, not a leaked exception`() = runTest {
-        coEvery { messages.save(any()) } throws IllegalStateException("connection reset")
+    fun `saves the message and answers with the assigned id`() = runTest {
+        val saved = slot<Message>()
+        every { db.save(capture(saved)) } answers { saved.captured.copy(id = "new-id") }
+
+        val response = service.saveMessage(
+            SaveRequest.newBuilder().setText("Bonjour!").setLanguage("fr").build()
+        )
+
+        assertThat(saved.captured.id).isNull()
+        assertThat(saved.captured.text).isEqualTo("Bonjour!")
+        assertThat(saved.captured.language).isEqualTo("fr")
+        assertThat(response.id).isEqualTo("new-id")
+    }
+
+    @Test
+    fun `an empty language on the wire is stored as the empty string`() = runTest {
+        val saved = slot<Message>()
+        every { db.save(capture(saved)) } answers { saved.captured.copy(id = "new-id") }
+
+        service.saveMessage(SaveRequest.newBuilder().setText("Hello!").build())
+
+        assertThat(saved.captured.language).isEmpty()
+    }
+
+    @Test
+    fun `a database failure becomes INTERNAL, not a leaked exception`() = runTest {
+        every { db.save(any()) } throws IllegalStateException("connection reset")
 
         val thrown = assertFailsWith<StatusException> {
             service.saveMessage(SaveRequest.newBuilder().setText("Hello!").build())
-        }
-
-        assertThat(thrown.status.code).isEqualTo(Status.Code.INTERNAL)
-        assertThat(thrown.status.description).isEqualTo("connection reset")
-    }
-
-    @Test
-    fun `a failure part way through the stream becomes INTERNAL too`() = runTest {
-        every { messages.findAll() } returns flow { throw IllegalStateException("connection reset") }
-
-        val thrown = assertFailsWith<StatusException> {
-            service.getMessage(Empty.getDefaultInstance()).toList()
         }
 
         assertThat(thrown.status.code).isEqualTo(Status.Code.INTERNAL)

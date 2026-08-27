@@ -10,8 +10,6 @@ services:
         condition: service_healthy
       antarctic:
         condition: service_healthy
-      tapi:
-        condition: service_healthy
     environment:
       - POSTGRES_PASSWORD=password
       - POSTGRES_USER=postgres
@@ -22,7 +20,6 @@ services:
       # LOG_LEVEL=DEBUG turns the one-line-per-entry default into the full hop-by-hop trace
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TRANSLATE_URL=${TRANSLATE_URL:-http://libretranslate:5000}
-      - TAPI_URL=${TAPI_URL:-http://tapi:5000}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 5s
@@ -50,7 +47,10 @@ services:
       retries: 20
       start_period: 30s
   dbpostgresql:
-    image: postgres
+    # Pinned. `postgres` unpinned means a major upgrade lands on a `docker compose pull` and
+    # refuses to start on the old data directory. 14 is also what the integration test and the
+    # Kubernetes manifests use, and what this Flyway version supports without warning.
+    image: postgres:14
     ports:
       - "5432:5432"
     environment:
@@ -58,6 +58,11 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_DB=polldb
       - POSTGRES_HOST=dbpostgresql
+    volumes:
+      # Without this the database lives in an anonymous volume and every `down` silently
+      # discards it. Named, so data survives a restart and `down -v` is what clears it -
+      # matching the PersistentVolumeClaim the Kubernetes manifests use.
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 2s
@@ -88,20 +93,6 @@ services:
       retries: 30
       start_period: 180s
 
-  # The CSV source artic streams after a save. Built from its own repo, since the image is
-  # not published anywhere; everything else it needs is in that repo's own Dockerfile.
-  tapi:
-    build:
-      context: https://github.com/Jouda-Hidri/tapi.git
-    ports:
-      - "5000:5000"
-    healthcheck:
-      # A GET would stream 200MB, so the check only proves the port is accepting connections.
-      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 5000), 5)"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 20s
-
 volumes:
+  postgres-data:
   libretranslate-models:

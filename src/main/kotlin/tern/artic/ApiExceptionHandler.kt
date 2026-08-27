@@ -7,24 +7,20 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
-import tern.domain.InvalidMessageException
 import tern.tracing.RequestId
 
-/**
- * Without this, a downstream gRPC failure reaches the caller as a bare 500 with an empty body.
- * Each error carries the request id, so a client report can be tied straight back to the log
- * lines for that request across both services.
- */
 @RestControllerAdvice
 class ApiExceptionHandler {
     private val logger = LoggerFactory.getLogger(ApiExceptionHandler::class.java)
 
-    @ExceptionHandler(InvalidMessageException::class)
-    fun onInvalidMessage(e: InvalidMessageException): ResponseEntity<ApiError> {
-        logger.warn("Rejected request: ${e.message}")
-        return respond(HttpStatus.BAD_REQUEST, e.message ?: "Invalid message")
+    @ExceptionHandler(MethodArgumentNotValidException::class)
+    fun onInvalidRequest(e: MethodArgumentNotValidException): ResponseEntity<ApiError> {
+        val reason = e.bindingResult.fieldErrors.joinToString("; ") { it.defaultMessage ?: it.field }
+        logger.warn("Rejected invalid request: $reason")
+        return respond(HttpStatus.BAD_REQUEST, reason)
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
@@ -33,11 +29,6 @@ class ApiExceptionHandler {
         return respond(HttpStatus.BAD_REQUEST, "Request body is malformed or missing required fields")
     }
 
-    /**
-     * Both gRPC exception types are handled: the coroutine stubs throw the checked
-     * [StatusException], the blocking ones [StatusRuntimeException]. Matching only the latter
-     * silently turned an antarctic outage back into a 500.
-     */
     @ExceptionHandler(StatusException::class, StatusRuntimeException::class)
     fun onGrpcFailure(e: Exception): ResponseEntity<ApiError> {
         val grpcStatus = Status.fromThrowable(e)

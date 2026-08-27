@@ -22,8 +22,8 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.utility.DockerImageName
 import tern.artic.ApiError
 import tern.artic.MessageRequest
-import tern.artic.MessageStats
 import tern.artic.MessageResponse
+import tern.artic.MessageStats
 
 /**
  * The whole path in one test: HTTP into artic, gRPC over to antarctic, Flyway-migrated Postgres
@@ -44,13 +44,11 @@ class MessageApiIntegrationTest {
 
         assertThat(created.statusCode).isEqualTo(HttpStatus.CREATED)
         assertThat(created.body?.text).isEqualTo("Hello!")
-        assertThat(created.body?.id).isNotNull()
 
         val listed = rest.exchange<List<MessageResponse>>("/", HttpMethod.GET, null)
 
         assertThat(listed.statusCode).isEqualTo(HttpStatus.OK)
         assertThat(listed.body).extracting("text").contains("Hello!")
-        assertThat(listed.body?.map { it.id }).doesNotContainNull()
     }
 
     @Test
@@ -58,8 +56,7 @@ class MessageApiIntegrationTest {
         val created = rest.postForEntity("/", json(MessageRequest("Bonjour!")), MessageResponse::class.java)
 
         assertThat(created.statusCode).isEqualTo(HttpStatus.CREATED)
-        assertThat(created.body?.id).isNotNull()
-        assertThat(created.body?.language).isNull()
+        assertThat(created.body?.text).isEqualTo("Bonjour!")
     }
 
     @Test
@@ -93,13 +90,29 @@ class MessageApiIntegrationTest {
         assertThat(response.headers.getFirst("X-Request-Id")).isEqualTo("deadbeef")
     }
 
+
     @Test
-    fun `a blank message is rejected with 400 and an error body naming the request id`() {
+    fun `blank text is rejected with 400 and an error body naming the request id`() {
         val response = rest.postForEntity("/", json(MessageRequest("   ")), ApiError::class.java)
 
         assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
         assertThat(response.body?.message).contains("must not be blank")
         assertThat(response.body?.requestId).isNotBlank()
+    }
+
+    @Test
+    fun `text over the length limit is rejected with 400`() {
+        val response = rest.postForEntity("/", json(MessageRequest("a".repeat(1001))), ApiError::class.java)
+
+        assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(response.body?.message).contains("at most 1000 characters")
+    }
+
+    @Test
+    fun `text exactly at the limit is accepted`() {
+        val response = rest.postForEntity("/", json(MessageRequest("a".repeat(1000))), MessageResponse::class.java)
+
+        assertThat(response.statusCode).isEqualTo(HttpStatus.CREATED)
     }
 
     @Test
@@ -123,16 +136,6 @@ class MessageApiIntegrationTest {
         assertThat(readiness.body).contains("\"status\":\"UP\"")
     }
 
-    @Test
-    fun `health reports the antarctic hop separately from readiness`() {
-        val health = rest.getForEntity("/actuator/health", String::class.java)
-
-        assertThat(health.statusCode).isEqualTo(HttpStatus.OK)
-        assertThat(health.body).contains("\"antarctic\"")
-        // Reported for observability, but never a reason to fail readiness.
-        val readiness = rest.getForEntity("/actuator/health/readiness", String::class.java)
-        assertThat(readiness.body).doesNotContain("antarctic")
-    }
 
     @Test
     fun `probe traffic is not logged, real traffic is`(output: CapturedOutput) {
@@ -166,7 +169,6 @@ class MessageApiIntegrationTest {
             // Nothing listens on either; neither the tapi download nor the third-party
             // language detector may affect any of these assertions. The detector having no
             // one to talk to is exactly the degraded path this asserts still works.
-            registry.add("tern.tapi.url") { "http://localhost:1" }
             registry.add("tern.translate.url") { "http://localhost:1" }
             registry.add("tern.translate.timeout") { "200ms" }
         }

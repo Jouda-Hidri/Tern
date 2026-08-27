@@ -11,7 +11,19 @@ spec:
     metadata:
       labels:
         app: artic
+      annotations:
+        # Istio's Prometheus scrapes sidecars; these make it scrape the application too, so
+        # JVM, Hikari and http_server_requests land in the same place as the mesh metrics.
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
     spec:
+      initContainers:
+        # Kubernetes has no depends_on: without this the app starts before Postgres accepts
+        # connections, Flyway fails, and the pod crash-loops until it happens to win the race.
+        - name: wait-for-postgres
+          image: postgres:14
+          command: ['sh', '-c', 'until pg_isready -h postgresql -p 5432; do sleep 2; done']
       containers:
         - name: tern
           image: tern:latest
@@ -41,8 +53,6 @@ spec:
               value: "artic"
             - name: ANTARCTIC_TARGET
               value: "antarctic.default.svc.cluster.local:30000"
-            - name: TAPI_URL
-              value: "http://tapi.default.svc.cluster.local:5000"
           ports:
             - containerPort: 8080
           # Liveness only restarts the pod if the JVM itself is wedged; readiness gates traffic.

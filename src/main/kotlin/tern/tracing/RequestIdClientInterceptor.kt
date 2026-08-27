@@ -11,10 +11,6 @@ import io.grpc.MethodDescriptor
 import io.grpc.Status
 import org.slf4j.LoggerFactory
 
-/**
- * Carries the current request id across the wire to antarctic. The call is logged at DEBUG
- * only: antarctic logs its own entry, so at INFO the hop is already accounted for once.
- */
 class RequestIdClientInterceptor : ClientInterceptor {
     private val log = LoggerFactory.getLogger(RequestIdClientInterceptor::class.java)
 

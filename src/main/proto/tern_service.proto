@@ -2,12 +2,15 @@ syntax = "proto3";
 package tern.grpc;
 import "google/protobuf/empty.proto";
 
-message GetResponse {
-  string text = 1;
-  string id = 2;
-  // Empty when the detector was unavailable. New field numbers are only ever appended, so
-  // an older peer that does not know about them keeps working.
+message Message {
+  string id = 1;
+  string text = 2;
+  // Empty when the detector was unavailable.
   string language = 3;
+}
+
+message GetResponse {
+  repeated Message messages = 1;
 }
 
 message SaveRequest {
@@ -19,7 +22,13 @@ message SaveResponse {
   string id = 1;
 }
 
+message UpdateLanguageRequest {
+  string id = 1;
+  string language = 2;
+}
+
 service TernService {
-  rpc GetMessage (google.protobuf.Empty) returns (stream GetResponse) {}
+  rpc GetMessage (google.protobuf.Empty) returns (GetResponse) {}
   rpc SaveMessage (SaveRequest) returns (SaveResponse);
+  rpc UpdateLanguage (UpdateLanguageRequest) returns (google.protobuf.Empty);
 }

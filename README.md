@@ -1,163 +1,336 @@
 # Tern
 
-The Arctic tern holds the record for the longest migration route of any bird, traveling from the Arctic to the Antarctic and back again every year. The Antarctic tern is a species of tern that is native to the Antarctic region.    
-We want to migrate a service (Tern service) from legacy (Antarctic version) to a new version (Arctic version). We want Arctic to be receiving the traffic and synch with Antarctic, without falling in the issue of cascading HTTP.    
-We want to use Istio to maintain 2 deployments of the same app.    
-We can also simply use docker-compose, if we do not want to start locally Minikube.    
-The 2 services communicate using gRPC. On the gRPC callback, we make a call to Tapi using WebClient. Tapi exposes a a very large CSV file that we want to read using streaming, to avoid the issue of loading a large data in memory.
-
-## Setup
-
-Make sure you have Docker and maven 3.6.3 installed. Build on JDK 11-17: the Kotlin 1.7.10
-compiler cannot parse the version string of newer JDKs, which is why CI pins Temurin 17.
-
-### Option 1: using docker-compose
-
-docker-compose up --build
-
-Compose mirrors the Kubernetes topology: the same image runs twice, as `artic` (REST, port 8080)
-and as `antarctic` (gRPC, port 9090), alongside postgres. The Dockerfile is multi-stage, so a
-clean checkout is enough - no `mvn package` beforehand.
-
-Each service is gated on the one it depends on being *healthy*, not merely started, so the stack
-comes up in order on a cold machine.
-
-#### Following a request end to end
-
-Every log line carries `[service] [requestId]`, and the id is propagated from the HTTP request
-through the gRPC hop, so a single request can be followed across both services:
+We are migrating the Tern service. Therefore, the same image is deployed twice: `Arctic` receives the production
+traffic and delegates persistence to `Antarctic` (legacy) over gRPC, to avoid cascading HTTP calls.
 
 ````
-docker compose logs -f                    # live, interleaved across services
-docker compose logs | grep b5483e6a       # one request, both services
-curl -i -X POST localhost:8080/ -d '{"text":"hi"}' -H 'Content-Type: application/json'
-                                          # response carries X-Request-Id: b5483e6a
+    you ──HTTP──▶ artic ──gRPC──▶ antarctic ──▶ postgres
+                    │
+                    └──▶ libretranslate   detects the message language, after the response (optional)
 ````
 
-By default each service logs exactly one line per request - the point it enters - so the shape of
-a request is visible without the logs becoming unreadable:
+| Service | Port | What it is |
+| --- | --- | --- |
+| `artic` | 8080 | The new version. REST API, Kotlin + Spring Boot |
+| `antarctic` | 9090 | The legacy version. gRPC service - the same image, in its other role |
+| `dbpostgresql` | 5432 | Postgres, schema managed by Flyway |
+| `libretranslate` | 5050 | Language detection. Behind a profile, see below |
+
+## Quick start
+
+You only need **Docker**.
 
 ````
-artic     [b5483e6a] HTTP --> POST / - request received
-antarctic [b5483e6a] gRPC --> tern.grpc.TernService/SaveMessage - call received
+docker compose up -d --build                        # the stack
+docker compose --profile translate up -d --build    # ...plus language detection
+LOG_LEVEL=DEBUG docker compose up -d --build        # ...with the full trace
 ````
 
-Probe traffic to `/actuator` is excluded, since kubelet and compose hit it every few seconds.
-Failures are never silent at this level: they are logged by the exception handler on each side.
-
-`LOG_LEVEL=DEBUG` turns the same request into the full hop-by-hop trace, with statuses and timings:
+When the command returns the stack is genuinely up:
 
 ````
-LOG_LEVEL=DEBUG docker compose up -d
+docker compose ps
+````
+
+Stop everything with `docker compose --profile translate down`, or add `-v` to discard the
+database and start clean.
+
+## Using it
+
+### `POST /` - store a message
+
+Answers `201` once antarctic has confirmed the write. If that call times out we do not know
+whether it landed, so the answer is `202` - accepted, outcome unconfirmed - rather than claiming
+a resource was created or reporting a failure that may not have happened.
+
+````
+curl -i -X POST localhost:8080/ \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Bonjour mon ami, comment vas-tu"}'
+````
+
+Send your own id with `-H 'X-Request-Id: my-id'` and it is used instead of a generated one.
+
+````
+HTTP/1.1 201
+X-Request-Id: 5f2a91c4
+
+{"text":"Bonjour mon ami, comment vas-tu"}
+````
+
+Language detection does not happen on this path. The message is stored first and the response
+sent; detection runs afterwards and stores the result with a second call to antarctic. So the
+language appears in `/stats` a moment later, not in this response. Short inputs are hard to
+detect: a whole sentence gives far better results than `"Bonjour!"`.
+
+### `GET /` - list every message
+
+````
+curl -s localhost:8080/ | python3 -m json.tool
+````
+
+### `GET /stats` - counts by language
+
+The only place the detected language is exposed. It is eventually consistent: a message posted
+a moment ago may still be counted under `unknown`.
+
+````
+curl -s localhost:8080/stats
 ````
 
 ````
-INFO  artic     [b5483e6a] HTTP --> POST / - request received
-DEBUG artic     [b5483e6a] POST / - Posting message: hi
-DEBUG artic     [b5483e6a] Artic - Saving message: hi
-DEBUG artic     [b5483e6a] gRPC --> tern.grpc.TernService/SaveMessage - calling antarctic
-INFO  antarctic [b5483e6a] gRPC --> tern.grpc.TernService/SaveMessage - call received
-DEBUG antarctic [b5483e6a] Antarctic - Saved message 2d10ae23-... to the database
-DEBUG antarctic [b5483e6a] gRPC <-- tern.grpc.TernService/SaveMessage - OK in 93 ms
-DEBUG artic     [b5483e6a] gRPC <-- tern.grpc.TernService/SaveMessage - OK in 224 ms
-DEBUG artic     [b5483e6a] Artic - Antarctic saved message 2d10ae23-...
-DEBUG artic     [b5483e6a] HTTP <-- POST / - responded 201 in 412 ms
+{"total":3,"byLanguage":{"en":1,"es":1,"fr":1}}
 ````
 
-Calls made straight to the gRPC port (`localhost:9090`) without the header get an id generated on
-the antarctic side, so they are traceable too.
+`unknown` counts messages whose language is not known yet - either detection has not finished,
+or the detector was unavailable. It always sorts last.
 
-#### Third-party language detection
-
-On save, artic asks [LibreTranslate](https://libretranslate.com) what language the message is
-written in and stores the answer alongside it. It is off by default because the image is ~800MB
-and downloads its models on first boot:
+### Logging
 
 ````
-docker compose --profile translate up -d --build
-curl -s -X POST localhost:8080/ -H 'Content-Type: application/json' -d '{"text":"Bonjour mon ami"}'
-# {"id":"12e90c25-...","text":"Bonjour mon ami","language":"fr"}
+docker compose logs -f                                  # live, interleaved across services
+docker compose logs | grep 5f2a91c4 | sort -t'|' -k2    # one request, both services
 ````
 
-Point it at the hosted service instead by setting `TRANSLATE_URL=https://libretranslate.com` and
-`TRANSLATE_API_KEY`; nothing else changes.
-
-The detector is treated as something that is allowed to be down. `LanguageDetector` never
-throws - a timeout, a 5xx, an unparseable body or an unrecognised code all come back as null,
-and the message saves without a language:
+By default, each service logs the point a request enters it plus what it is doing:
 
 ````
-docker compose stop libretranslate
-curl -s -X POST localhost:8080/ -H 'Content-Type: application/json' -d '{"text":"Bonjour encore"}'
-# {"id":"9d3daa94-...","text":"Bonjour encore","language":null}   - still 201, in under 400ms
+artic     [5f2a91c4] HTTP --> POST / - request received
+artic     [5f2a91c4] POST / - Posting message: Bonjour mon ami
+artic     [5f2a91c4] Artic - Request message: Bonjour mon ami
+antarctic [5f2a91c4] gRPC --> tern.grpc.TernService/SaveMessage - call received
+antarctic [5f2a91c4] Antarctic - Request messages
 ````
 
-That is why the call has a short response timeout (it sits on the POST path, so a slow third
-party must not stall callers), one retry limited to the transient cases, and a nullable
-`language` column added by `V2__add_language.sql`.
+`LOG_LEVEL=DEBUG` adds the other side of each hop, with statuses and timings:
 
-#### Health and metrics
+````
+INFO  artic     [5f2a91c4] HTTP --> POST / - request received
+DEBUG artic     [5f2a91c4] gRPC --> tern.grpc.TernService/SaveMessage - calling antarctic
+INFO  antarctic [5f2a91c4] gRPC --> tern.grpc.TernService/SaveMessage - call received
+DEBUG antarctic [5f2a91c4] gRPC <-- tern.grpc.TernService/SaveMessage - OK in 368 ms
+DEBUG artic     [5f2a91c4] gRPC <-- tern.grpc.TernService/SaveMessage - OK in 716 ms
+DEBUG artic     [5f2a91c4] HTTP <-- POST / - responded 201 in 1635 ms
+````
+
+### Errors
+
+Every error carries the request id, so a report can be tied straight back to the logs.
+
+| Request | Answer |
+| --- | --- |
+| `{"text":"   "}` | `400` `text must not be blank` |
+| `{"text":"<over 1000 chars>"}` | `400` `text must be at most 1000 characters` |
+| `{"nope":1}` or invalid JSON | `400` `Request body is malformed or missing required fields` |
+| `GET /` while antarctic is down | `503` `Antarctic is unavailable`, or `504` `Antarctic is deadline exceeded` |
+| `POST /` while antarctic is down | `202` - see above |
+
+````
+{"status":400,"message":"text must not be blank","requestId":"8f0affb2"}
+````
+
+`src/main/resources/requests.http` has all of these ready to run from an IDE.
+
+### Talking to gRPC directly
+
+Server reflection is on, so no `.proto` file is needed:
+
+````
+grpcurl -plaintext localhost:9090 list
+grpcurl -plaintext -d '{}' localhost:9090 tern.grpc.TernService/GetMessage
+grpcurl -plaintext -d '{"text":"via grpc"}' localhost:9090 tern.grpc.TernService/SaveMessage
+````
+
+No grpcurl installed? `docker run --rm fullstorydev/grpcurl -plaintext host.docker.internal:9090 list`
+
+## When things break
+
+The detector is allowed to be down - it cannot stop a message being stored. Antarctic is
+different: without it there is nothing to store into.
+
+| Stop this | What happens |
+| --- | --- |
+| `docker compose stop libretranslate` | `201` as usual; the message stays under `unknown` in `/stats` |
+| `docker compose stop antarctic` | `POST` answers `202`, `GET` answers `503` or `504` |
+
+Readiness deliberately stays `UP` through all of it. Artic still works, and failing readiness
+would pull it out of the load balancer too - turning one outage into two.
+
+`GET` gives 503 if gRPC already knew the connection was dead, 504 if the call had to wait out
+`ANTARCTIC_DEADLINE` first. After antarctic returns, the next request or two may still fail
+while gRPC backs off; it clears in seconds.
+
+## Health and metrics
 
 ````
 curl localhost:8080/actuator/health/liveness    # what the k8s livenessProbe hits
 curl localhost:8080/actuator/health/readiness   # what the readinessProbe hits
-curl localhost:8080/actuator/health             # per-component, including the antarctic hop
+curl localhost:8080/actuator/health             # db, disk, liveness and readiness state
 curl localhost:8080/actuator/prometheus         # micrometer metrics
 ````
 
-Antarctic reachability is reported as its own component, using the standard gRPC health service:
+Nothing scrapes this under docker-compose. Under Kubernetes the pods carry
+`prometheus.io/scrape` annotations, so Istio's Prometheus collects these alongside the mesh
+metrics - see below.
+
+## Configuration
+
+Everything is defaulted for Kubernetes and overridden by compose, so neither needs editing.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `POSTGRES_HOST` / `_DB` / `_USER` / `_PASSWORD` | - / `postgres` | Database connection |
+| `ANTARCTIC_TARGET` | `antarctic.default.svc.cluster.local:30000` | Where artic finds antarctic |
+| `ANTARCTIC_DEADLINE` | `2s` | Bounds every gRPC call, so an unreachable antarctic fails fast |
+| `TRANSLATE_URL` | `http://libretranslate:5000` | Detector; point at `https://libretranslate.com` with `TRANSLATE_API_KEY` to use the hosted one |
+| `TRANSLATE_TIMEOUT` | `2s` | How long the background detection waits before giving up |
+| `LOG_LEVEL` | `INFO` | `DEBUG` for the full trace |
+| `SERVICE_NAME` | `tern` | Which role this container is playing, shown in every log line |
+
+## Tests
 
 ````
-"antarctic": { "status": "DOWN", "details": { "target": "antarctic:9090", "status": "DEADLINE_EXCEEDED" } }
+mvn verify
 ````
 
-It is deliberately kept out of the readiness group. If antarctic goes down, artic is still
-working - it answers 503 per request - and failing its readiness would pull it out of the load
-balancer as well, turning one outage into two.
+Needs Docker running, and **JDK 11-17** - the Kotlin 1.7.10 compiler cannot parse the version
+string of newer JDKs, which is why CI pins Temurin 17. If `mvn -v` reports something newer:
 
-### Option 2: using kubernetes and Minikube
+````
+JAVA_HOME=$(/usr/libexec/java_home -v 17) mvn verify
+````
+
+Unit tests cover the gRPC adapter's error translation and the HTTP status mapping.
+`ArticServiceTest` runs a real gRPC server over the in-process transport, and
+`LanguageDetectorTest` runs the detector against a MockWebServer to check what it does on
+timeouts, 5xx and malformed bodies. `MessageApiIntegrationTest` covers the whole path - HTTP
+into artic, gRPC to antarctic, a Flyway-migrated Postgres in a Testcontainer, and back.
+
+## Running it locally using Kubernetes and Minikube
+
+The same thing on a local cluster, plus Istio and autoscaling
 
 Make sure you have Minikube installed.    
 
 ````
-minikube start #(using virtualbox)    
-minikube addons enable metrics-server    
-eval $(minikube docker-env)    
-docker build -t tern .    
-cd deployment    
-kubectl apply -f artic.yaml    
-kubectl apply -f antarctic.yaml    
-kubectl apply -f postgres.yaml
-minikube dashboard
+minikube start --driver=docker --cpus=4 --memory=6144
+minikube addons enable metrics-server
+eval $(minikube docker-env)
+docker build -t tern .
+kubectl apply -f deployment/postgres.yaml -f deployment/antarctic.yaml -f deployment/artic.yaml
 ````
 
-Both deployments declare liveness and readiness probes against the actuator endpoints above.
-
-```minikube service artic```    
+Both deployments declare liveness and readiness probes against the actuator endpoints above, and
+an initContainer that waits for Postgres - Kubernetes has no `depends_on`, so without it the app
+starts before the database accepts connections and crash-loops until it wins the race.
 
 ````
-curl -d '{"text":"some-text"}' -H "Content-Type: application/json" -X POST {artic_host}    
-curl {artic_host}
+kubectl port-forward svc/artic 8080:8080
+
+curl -d '{"text":"some-text"}' -H "Content-Type: application/json" -X POST localhost:8080/
+curl localhost:8080/
 ````
+
+Language detection is not deployed here, so messages stay under `unknown` in `/stats`.
 
 #### Istio
-Make sure you have istio 1.18 installed.    
 
 ````
-# to download istio:    
-curl -L https://istio.io/downloadIstio | sh -
-# from inside istio folder
-export PATH=$PWD/bin:$PATH
+brew install istioctl        # or: curl -L https://istio.io/downloadIstio | sh -
 istioctl install --set profile=demo -y
 
-kubectl label namespace default istio-injection=enabled    
+kubectl label namespace default istio-injection=enabled
+kubectl rollout restart deployment/artic deployment/antarctic deployment/postgresql
 
-kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/prometheus.yaml    
-kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/kiali.yaml    
-kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/grafana.yaml    
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/prometheus.yaml
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/kiali.yaml
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/grafana.yaml
 
 istioctl dashboard kiali
 ````
+
+Pods become `2/2` once the sidecar is injected. Istio identifies the hop between the two
+services as gRPC and records it:
+
+````
+istio_requests_total{source_app="artic", destination_app="antarctic", request_protocol="grpc", response_code="200"}
+````
+
+The request id lines up for free: `X-Request-Id` is the header Envoy uses for its own
+correlation, so one value ties the application logs to the sidecar access logs.
+
+##### Metrics
+
+Traffic has to enter through the ingress gateway to be measured - `kubectl port-forward` goes
+straight to the pod and bypasses the mesh, which leaves only the gRPC hop visible:
+
+````
+kubectl apply -f deployment/istio-gateway.yaml
+kubectl port-forward -n istio-system svc/istio-ingressgateway 8080:80
+
+istioctl dashboard prometheus     # localhost:9090
+istioctl dashboard kiali          # localhost:20001
+istioctl dashboard grafana        # localhost:3000
+````
+
+Three queries for Prometheus:
+
+````
+# request count by status
+sum by (destination_app,request_protocol,response_code) (istio_requests_total{reporter="destination"})
+
+# requests per second
+sum by (destination_app,request_protocol) (rate(istio_requests_total{reporter="destination"}[1m]))
+
+# p95 latency
+histogram_quantile(0.95, sum by (le,destination_app) (rate(istio_request_duration_milliseconds_bucket{reporter="destination"}[1m])))
+````
+
+Which gives both hops without the application measuring anything itself:
+
+````
+antarctic   grpc  200  2272        antarctic  22.16 req/s   p95   5 ms
+artic       http  200   616        artic      21.62 req/s   p95  10 ms
+artic       http  201   615
+artic       http  400     1
+artic       http  404     1
+````
+
+The pods are also annotated for scraping, so the same Prometheus holds the application's own
+metrics. Istio merges them with the sidecar's on port 15020, so no extra scrape target is
+needed:
+
+````
+# the same three, measured by the application rather than by Envoy
+sum by (app,status,method) (http_server_requests_seconds_count{uri!~"/actuator.*"})
+sum by (app,method) (rate(http_server_requests_seconds_count{uri!~"/actuator.*"}[1m]))
+histogram_quantile(0.95, sum by (le,app,method) (rate(http_server_requests_seconds_bucket{uri="/"}[1m])))
+
+# and what only the application can report
+jvm_memory_used_bytes{area="heap"}   hikaricp_connections_active   jvm_threads_live_threads
+````
+
+The two disagree slightly, and that is the point: Envoy measures at the sidecar, Micrometer
+inside the JVM, so the gap between them is proxy and network time.
+
+````
+p95  artic  GET  14 ms (app)   vs   20 ms (Envoy)
+````
+
+##### Dashboards
+
+Istio's own dashboards only query `istio_*`, so they show the mesh but not the application.
+`deployment/grafana/tern-dashboard.json` covers the rest - RPS, status codes, latency
+percentiles, the app-vs-Envoy gap, heap, Hikari and threads:
+
+````
+istioctl dashboard grafana
+curl -sX POST localhost:3000/api/dashboards/db -H 'Content-Type: application/json' \
+  -d "{\"dashboard\": $(cat deployment/grafana/tern-dashboard.json), \"overwrite\": true}"
+````
+
+Then **localhost:3000/d/tern-app**. For the mesh side use Istio's *Service* dashboard at
+`localhost:3000/d/LJ_uJAvmk?var-service=artic.default.svc.cluster.local`.
 
 
 #### Locust
@@ -166,30 +339,6 @@ In order to have a loadTest and see traffic animation on Kiali
 <img width="766" alt="Screenshot 2023-07-02 at 16 01 47" src="https://github.com/Jouda-Hidri/Tern/assets/30729085/f7c67457-2a28-4841-9a17-edfa6f826a08">
 
 To setup Locust, clone this project https://github.com/Jouda-Hidri/tern-lt
-
-#### Tapi
-After a message is saved, Tapi is called    
-<img width="768" alt="Screenshot 2023-07-03 at 13 12 50" src="https://github.com/Jouda-Hidri/Tern/assets/30729085/17763716-9c9e-4247-9e4b-70ad0819b54b">    
-
-To setup Tapi, clone this project: https://github.com/Jouda-Hidri/tapi
-
-`TapiDownloader` treats it the same way as the language detector - as something allowed to be
-down. It streams the CSV line by line so the file is never held in memory whole, runs off the
-request thread so a save never waits on it, retries once on a transient failure, and logs and
-drops anything else. Its read timeout is an *idle* timeout rather than a cap on the whole
-transfer, so a large but progressing download is fine and only a stalled one is cut off.
-
-## Tests
-
-````
-mvn verify
-````
-
-Unit tests cover the domain invariants, the repository mapping and the gRPC adapter's error
-translation. `ArticServiceTest` runs a real gRPC server over the in-process transport, so the
-stubs and status codes are genuinely exercised with only the remote implementation faked.
-`MessageApiIntegrationTest` covers the whole path - HTTP into artic, gRPC to antarctic, a
-Flyway-migrated Postgres in a Testcontainer, and back - which needs Docker running.
 
 ## CI/CD
 
@@ -204,101 +353,69 @@ rebuilding and re-testing on a second trigger. Images are tagged with the commit
 deployment can name exactly what it runs; the rollout itself is manual, since there is no
 long-lived cluster to deploy to.
 
-### AWS: the registry and how CI authenticates to it
+CD is the only part that needs an AWS account, and only for publishing. Without one, `CI` still
+runs on every push and pull request, and running it locally works unchanged -
+both options build the image from source.
 
-`deployment/aws/ecr-oidc.yaml` creates the ECR repository and an IAM role that GitHub Actions
-assumes through OIDC. **No AWS access key exists anywhere** - not in repository secrets, not on
-a laptop. GitHub mints a short-lived token per run, STS exchanges it for credentials that expire
-with the job, and the role's trust policy will only accept a token that carries both the right
-audience and a subject naming this repository on `refs/heads/main`.
-
-Deploy it once, with credentials for your own account:
+`CD` is what breaks. With no `AWS_ROLE_ARN` variable set, `role-to-assume` is empty and the run
+stops after a few seconds with:
 
 ````
-aws configure sso     # or: aws configure
+Error: Credentials could not be loaded, please check your action inputs:
+Could not load credentials from any providers
+````
+
+Set the variable as described in [the next section](#where-cd-pushes-to-and-how-it-authenticates),
+or delete `.github/workflows/cd.yml` if the red run is just noise.
+
+### Where CD pushes to, and how it authenticates
+
+`deployment/aws/ecr-oidc.yaml` creates the ECR repository and an IAM role GitHub Actions assumes
+through OIDC, so **no AWS access key exists anywhere**. The role's trust policy accepts only a
+token whose audience is `sts.amazonaws.com` and whose subject names your repository on
+`refs/heads/main`.
+
+This is deployed and in use: stack `tern-ci` in `eu-central-1`, and CD pushes to it on every green
+build of main. To set it up in another account:
+
+````
+aws configure sso                  # first time
+aws sso login --profile <name>     # afterwards, to refresh
 
 aws cloudformation deploy \
   --region eu-central-1 \
   --stack-name tern-ci \
   --template-file deployment/aws/ecr-oidc.yaml \
-  --capabilities CAPABILITY_NAMED_IAM
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides GitHubRepository=<owner>/<repo>
 
 aws cloudformation describe-stacks --region eu-central-1 --stack-name tern-ci \
   --query 'Stacks[0].Outputs' --output table
 ````
 
+If the account already has a GitHub OIDC provider, add `CreateOidcProvider=false` - an account
+may only hold one per URL.
+
 Then hand the role ARN from those outputs to GitHub. It is a repository *variable*, not a
-secret - a role ARN is not sensitive, and it is worthless without a token from this repository:
+secret - a role ARN is not sensitive, and it is worthless without a token from your repository:
 
 ````
 gh variable set AWS_ROLE_ARN --body 'arn:aws:iam::<account-id>:role/tern-ci-github-actions'
 ````
 
-The repository keeps only the 10 most recent images, so an abandoned pipeline cannot quietly
-accumulate storage charges. Scanning on push is enabled.
+A **variable**, not a secret - `cd.yml` reads `vars.AWS_ROLE_ARN`, so a secret of the same name
+resolves to empty and reproduces the error above.
 
-## Seeing it work
-
-A guided tour of everything above, start to finish.
-
-### 1. Bring the stack up
+Pull what CD published:
 
 ````
-docker compose up --build -d
-docker compose ps            # all three services report healthy
+aws ecr get-login-password --region eu-central-1 \
+  | docker login --username AWS --password-stdin <account-id>.dkr.ecr.eu-central-1.amazonaws.com
+docker pull --platform linux/amd64 <account-id>.dkr.ecr.eu-central-1.amazonaws.com/tern:latest
 ````
 
-### 2. Call the API
+GitHub's runners are x86_64, so CD publishes `linux/amd64` only - hence `--platform` on arm64
+machines. Building locally has no such constraint.
 
-````
-curl -s localhost:8080/ | python3 -m json.tool
-curl -i -X POST localhost:8080/ -H 'Content-Type: application/json' -d '{"text":"hi"}'
-curl -i -X POST localhost:8080/ -H 'Content-Type: application/json' -d '{"text":"  "}'
-````
-
-A valid post answers `201` with the persisted message and its id, and an `X-Request-Id` header.
-Blank text answers `400` with an error body carrying the same id.
-
-### 3. Follow one request across both services
-
-Take the `X-Request-Id` from any response above:
-
-````
-docker compose logs -f                 # live, interleaved across services
-docker compose logs | grep <that-id>   # one request, artic and antarctic
-````
-
-### 4. Watch health degrade without cascading
-
-````
-curl -s localhost:8080/actuator/health | python3 -m json.tool
-docker compose stop antarctic
-curl -s localhost:8080/actuator/health | python3 -m json.tool   # antarctic DOWN, overall 503
-curl -s localhost:8080/actuator/health/readiness                # still UP - artic stays in the LB
-curl -i -X POST localhost:8080/ -H 'Content-Type: application/json' -d '{"text":"x"}'  # 503, not 500
-docker compose start antarctic
-````
-
-### 5. Talk to gRPC directly
-
-Server reflection is enabled, so no `.proto` file is needed:
-
-````
-docker run --rm fullstorydev/grpcurl -plaintext host.docker.internal:9090 list
-docker run --rm fullstorydev/grpcurl -plaintext -d '{}' host.docker.internal:9090 tern.grpc.TernService/GetMessage
-````
-
-### 6. Run the tests
-
-````
-mvn verify
-````
-
-Watch for the Testcontainers Postgres starting up during `MessageApiIntegrationTest`.
-
-### 7. Watch the pipeline
-
-CI runs on every pull request against `main`; CD only fires once CI is green on `main`, and
-publishes to `ghcr.io/<owner>/<repo>`. Both are visible under the repository's Actions tab.
-
-
+A lifecycle policy keeps the last two builds and expires untagged manifests after a day, which
+holds the repository inside the 500MB free tier. Scanning on push is enabled.
