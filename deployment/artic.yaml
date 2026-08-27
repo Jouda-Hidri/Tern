@@ -32,8 +32,32 @@ spec:
                 configMapKeyRef:
                   name: postgres-config
                   key: postgres_host
+            - name: SERVICE_NAME
+              value: "artic"
+            - name: ANTARCTIC_TARGET
+              value: "antarctic.default.svc.cluster.local:30000"
+            - name: TAPI_URL
+              value: "http://tapi.default.svc.cluster.local:5000"
           ports:
             - containerPort: 8080
+          # Liveness only restarts the pod if the JVM itself is wedged; readiness gates traffic.
+          # Antarctic reachability is reported under /actuator/health but kept out of the
+          # readiness group on purpose, so an antarctic outage does not also pull artic
+          # out of the load balancer.
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
           resources:
             limits:
               cpu: "1"

@@ -1,17 +1,47 @@
-version: '3.1'
 services:
-  tern:
+  # Mirrors the Kubernetes topology: the same image runs twice, as the REST
+  # front end (artic, 8080) and as the gRPC back end (antarctic, 9090).
+  artic:
     build: ./
     ports:
       - "8080:8080"
-      - "9090:9090"
     depends_on:
-      - dbpostgresql
+      dbpostgresql:
+        condition: service_healthy
+      antarctic:
+        condition: service_healthy
     environment:
       - POSTGRES_PASSWORD=password
       - POSTGRES_USER=postgres
       - POSTGRES_DB=polldb
       - POSTGRES_HOST=dbpostgresql
+      - ANTARCTIC_TARGET=antarctic:9090
+      - SERVICE_NAME=artic
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+  antarctic:
+    build: ./
+    ports:
+      - "9090:9090"
+    depends_on:
+      dbpostgresql:
+        condition: service_healthy
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=polldb
+      - POSTGRES_HOST=dbpostgresql
+      - SERVICE_NAME=antarctic
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
   dbpostgresql:
     image: postgres
     ports:
@@ -21,3 +51,8 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_DB=polldb
       - POSTGRES_HOST=dbpostgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

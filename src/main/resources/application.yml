@@ -1,5 +1,11 @@
 server:
   port: 8080
+tern:
+  # Defaults are the Kubernetes service addresses; docker-compose overrides them via env.
+  antarctic:
+    target: ${ANTARCTIC_TARGET:antarctic.default.svc.cluster.local:30000}
+  tapi:
+    url: ${TAPI_URL:http://tapi.default.svc.cluster.local:5000}
 spring:
   flyway:
     baselineOnMigrate: true
@@ -13,3 +19,24 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         ddl-auto: none
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true          # exposes /actuator/health/liveness and /readiness for k8s
+      show-details: always
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+logging:
+  pattern:
+    # Puts the per-request id next to the level, so `docker compose logs -f` can be grepped
+    # by id to follow one request across artic and antarctic. SERVICE_NAME labels which of
+    # the two roles the container is running.
+    level: "%5p [${SERVICE_NAME:tern}] [%X{requestId:-              }]"

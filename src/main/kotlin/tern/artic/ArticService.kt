@@ -2,96 +2,73 @@ package tern.artic
 
 import com.google.protobuf.Empty
 import io.grpc.ManagedChannel
-import io.grpc.ManagedChannelBuilder
-import io.grpc.stub.StreamObserver
 import org.slf4j.LoggerFactory
-import org.springframework.core.io.buffer.DataBuffer
-import org.springframework.core.io.buffer.DataBufferUtils
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
-import tern.antarctic.Message
+import reactor.core.publisher.Flux
+import tern.domain.Message
+import tern.domain.MessageId
 import tern.grpc.TernServiceGrpc
-import tern.grpc.TernServiceOuterClass.SaveRequest
-import tern.grpc.TernServiceOuterClass.SaveResponse
-import java.io.BufferedReader
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.io.InputStreamReader
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
-
+import tern.tracing.RequestId
+import tern.transport.toDomain
+import tern.transport.toSaveRequest
 
 @Service
-class ArticService() {
+class ArticService(
+    channel: ManagedChannel,
+    private val tapiClient: WebClient,
+    @Value("\${tern.tapi.url}") private val tapiUrl: String,
+) {
     private val logger = LoggerFactory.getLogger(ArticService::class.java)
-    private var channel: ManagedChannel = ManagedChannelBuilder.forTarget("antarctic.default.svc.cluster.local:30000")
-        .usePlaintext()
-        .build()
-    private var blockingStub = TernServiceGrpc.newBlockingStub(channel)
-    private var stub = TernServiceGrpc.newStub(channel)
-    var client: WebClient = WebClient.create("http://tapi.default.svc.cluster.local:5000")
+    private val blockingStub = TernServiceGrpc.newBlockingStub(channel)
 
     fun find(): List<Message> {
         logger.info("Artic - Retrieving messages")
-        val response = blockingStub.getMessage(Empty.getDefaultInstance())
-        val list: MutableList<Message> = mutableListOf()
-        response.forEach { getResponse ->
-            list.add(Message(id = null, text = getResponse.text))
-        }
-        return list
+        val found = blockingStub.getMessage(Empty.getDefaultInstance())
+            .asSequence()
+            .map { it.toDomain() }
+            .toList()
+        logger.info("Artic - Received ${found.size} message(s) from antarctic")
+        return found
     }
 
-    fun save(message: Message) {
-        logger.info("Artic - Request message: $message")
-        stub.saveMessage(
-            SaveRequest.newBuilder().setText(message.text).build(), object : StreamObserver<SaveResponse> {
-                override fun onNext(response: SaveResponse?) {
-                    // todo possible to use response as path param
-                    logger.warn("Artic - $response")
-                }
+    /**
+     * Saves through antarctic and returns the persisted message. This blocks on purpose: the
+     * previous async version let the HTTP layer answer 200 before the write had happened, so a
+     * failure downstream was reported to the caller as success.
+     */
+    fun save(message: Message): Message {
+        logger.info("Artic - Saving message: ${message.text}")
+        val response = blockingStub.saveMessage(message.toSaveRequest())
+        val saved = message.copy(id = MessageId.of(response.id))
+        logger.info("Artic - Antarctic saved message ${saved.id}")
 
-                override fun onError(throwable: Throwable?) {
-                    logger.error("Artic - Error ${throwable?.message}")
-                }
+        streamFromTapi()
+        return saved
+    }
 
-                override fun onCompleted() {
-                    logger.info("Artic - Completed")
-                    val flux = client.get().retrieve().bodyToFlux(DataBuffer::class.java)
-
-                    val outputStream = ByteArrayOutputStream()
-                    val dataBufferOutputStream = DataBufferUtils.write(flux, outputStream)
-
-                    dataBufferOutputStream.blockLast()
-                    val byteBuffer = outputStream.toByteArray()
-
-                    val inputStream = ByteArrayInputStream(byteBuffer)
-                    val reader = BufferedReader(InputStreamReader(inputStream))
-
-                    try {
-                        while (true) {
-                            val line = reader.readLine() ?: break
-                            logger.info("Tapi - $line")
-                        }
-                    } finally {
-                        reader.close()
-                        inputStream.close()
-                    }
-
-                    logger.info("Tapi - Download completed.")
-
+    /**
+     * Fires the tapi download without blocking the caller: it is a side effect of saving, not
+     * part of the answer. tapi is a separate deployment and may not be running at all (it is
+     * absent from docker-compose), so failures are logged rather than propagated.
+     *
+     * `bodyToFlux(String)` splits the response on newlines as it arrives, which is the point of
+     * the exercise - the CSV is never held in memory in one piece.
+     */
+    private fun streamFromTapi() {
+        val requestId = RequestId.current()
+        tapiClient.get()
+            .retrieve()
+            .bodyToFlux(String::class.java)
+            .doOnNext { line -> RequestId.withRequestId(requestId) { logger.info("Tapi - $line") } }
+            .doOnComplete { RequestId.withRequestId(requestId) { logger.info("Tapi - Download completed.") } }
+            .doOnError { e ->
+                RequestId.withRequestId(requestId) {
+                    logger.warn("Tapi - Unreachable at $tapiUrl, skipping download: ${e.message}")
                 }
             }
-        )
-    }
-
-    fun status(): Int? {
-        return client.get()
-            .uri("/")
-            .exchangeToMono { it.toEntity(Void::class.java) }
-            .map { it.statusCode }
-            .block()
-            ?.value()
+            .onErrorResume { Flux.empty() }
+            .subscribe()
     }
 }
