@@ -88,27 +88,11 @@ services:
       retries: 30
       start_period: 180s
 
-  # The CSV source artic streams after a save. Built straight from its own repo, since the
-  # image is not published anywhere. Three things there need working around:
-  #   - its Dockerfile runs api22:app, a module that does not exist
-  #   - api.py reads a large_file.csv that is not checked in; api2.py generates one instead,
-  #     which is the streaming demo anyway
-  #   - requirements.txt pins Flask 2.0.1 but not Werkzeug, and Werkzeug 3 dropped url_quote,
-  #     so an unpinned build fails at import
-  # Fixing these in the tapi repo itself would let all of this collapse to a context and a port.
+  # The CSV source artic streams after a save. Built from its own repo, since the image is
+  # not published anywhere; everything else it needs is in that repo's own Dockerfile.
   tapi:
     build:
       context: https://github.com/Jouda-Hidri/tapi.git
-      dockerfile_inline: |
-        FROM python:3.9
-        WORKDIR /app
-        COPY requirements.txt .
-        RUN pip install --no-cache-dir -r requirements.txt "werkzeug<2.1" gunicorn
-        COPY . .
-        EXPOSE 5000
-    # Each save triggers a fresh 200MB stream, so a single sync worker serialises concurrent
-    # POSTs and they time each other out. Threaded workers keep them independent.
-    command: ["gunicorn", "api2:app", "-b", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "--timeout", "600"]
     ports:
       - "5000:5000"
     healthcheck:

@@ -10,17 +10,18 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  AWS_REGION: eu-central-1
 
 jobs:
   publish:
-    name: Publish image to GHCR
+    name: Publish image to ECR
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      # Lets GitHub mint the OIDC token that AWS exchanges for temporary credentials. There is
+      # no AWS access key in this repository's secrets, so there is nothing to leak or rotate.
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -31,12 +32,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      # AWS_ROLE_ARN is a repository *variable*, not a secret: a role ARN is not sensitive, and
+      # it is useless without a token from this repository on the ref the role's trust policy
+      # names. See deployment/aws/ecr-oidc.yaml.
+      - name: Assume the deployment role
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: tern-cd-${{ github.run_id }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       # Tags every build with its commit sha so a deployment can name exactly what it runs,
       # and moves `latest` alongside it for convenience.
@@ -44,7 +52,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.ecr.outputs.registry }}/tern
           tags: |
             type=raw,value=latest
             type=sha,format=long
@@ -60,6 +68,8 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Summarise
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/tern:sha-${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           {
             echo "### Published"
@@ -70,7 +80,7 @@ jobs:
             echo ""
             echo "Roll out with:"
             echo '```'
-            echo "kubectl set image deployment/artic tern=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.event.workflow_run.head_sha || github.sha }}"
-            echo "kubectl set image deployment/antarctic tern=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.event.workflow_run.head_sha || github.sha }}"
+            echo "kubectl set image deployment/artic tern=$IMAGE"
+            echo "kubectl set image deployment/antarctic tern=$IMAGE"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

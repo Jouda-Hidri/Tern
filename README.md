@@ -196,13 +196,46 @@ Flyway-migrated Postgres in a Testcontainer, and back - which needs Docker runni
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
 | `CI` (`maven.yml`) | push / PR to main | `mvn verify` on Temurin 17, uploads the surefire reports, then builds the container image to prove a clean checkout is buildable |
-| `CD` (`cd.yml`) | a green `CI` run on main | Publishes to GHCR tagged `latest` and `sha-<commit>`, and writes the `kubectl set image` rollout commands to the run summary |
+| `CD` (`cd.yml`) | a green `CI` run on main | Publishes to Amazon ECR tagged `latest` and `sha-<commit>`, and writes the `kubectl set image` rollout commands to the run summary |
 | `DORA Lead Time` (`dora.yml`) | PR merged | Measures first-commit-to-merge lead time |
 
 CD is triggered by `workflow_run`, so it publishes only what CI already proved green rather than
 rebuilding and re-testing on a second trigger. Images are tagged with the commit sha so a
 deployment can name exactly what it runs; the rollout itself is manual, since there is no
 long-lived cluster to deploy to.
+
+### AWS: the registry and how CI authenticates to it
+
+`deployment/aws/ecr-oidc.yaml` creates the ECR repository and an IAM role that GitHub Actions
+assumes through OIDC. **No AWS access key exists anywhere** - not in repository secrets, not on
+a laptop. GitHub mints a short-lived token per run, STS exchanges it for credentials that expire
+with the job, and the role's trust policy will only accept a token that carries both the right
+audience and a subject naming this repository on `refs/heads/main`.
+
+Deploy it once, with credentials for your own account:
+
+````
+aws configure sso     # or: aws configure
+
+aws cloudformation deploy \
+  --region eu-central-1 \
+  --stack-name tern-ci \
+  --template-file deployment/aws/ecr-oidc.yaml \
+  --capabilities CAPABILITY_NAMED_IAM
+
+aws cloudformation describe-stacks --region eu-central-1 --stack-name tern-ci \
+  --query 'Stacks[0].Outputs' --output table
+````
+
+Then hand the role ARN from those outputs to GitHub. It is a repository *variable*, not a
+secret - a role ARN is not sensitive, and it is worthless without a token from this repository:
+
+````
+gh variable set AWS_ROLE_ARN --body 'arn:aws:iam::<account-id>:role/tern-ci-github-actions'
+````
+
+The repository keeps only the 10 most recent images, so an abandoned pipeline cannot quietly
+accumulate storage charges. Scanning on push is enabled.
 
 ## Seeing it work
 
