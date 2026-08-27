@@ -1,4 +1,4 @@
-### Post 'Hello!" - answers 201 with the persisted message and its id
+### Post 'Hello!" - answers 201 with the persisted message, its id and detected language
 POST http://localhost:8080/
 Content-Type: application/json
 
@@ -42,4 +42,12 @@ X-Request-Id: my-trace
 
 {
   "text": "Traceable!"
+}
+
+### Longer text detects more reliably than a one-word greeting
+POST http://localhost:8080/
+Content-Type: application/json
+
+{
+  "text": "Bonjour mon ami, comment vas-tu aujourd'hui ?"
 }

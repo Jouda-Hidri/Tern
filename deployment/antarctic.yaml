@@ -17,6 +17,11 @@ spec:
           image: tern:latest
           imagePullPolicy: IfNotPresent
           env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: postgres_db
             - name: POSTGRES_USER
               valueFrom:
                 configMapKeyRef:

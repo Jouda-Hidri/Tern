@@ -80,6 +80,7 @@ kind: ConfigMap
 metadata:
   name: postgres-config
 data:
+  postgres_db: postgres
   postgres_user: postgres
   postgres_password: password
   postgres_host: postgresql

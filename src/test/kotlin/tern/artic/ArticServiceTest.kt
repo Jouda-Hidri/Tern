@@ -4,31 +4,39 @@ import com.google.protobuf.Empty
 import io.grpc.ManagedChannel
 import io.grpc.Server
 import io.grpc.Status
-import io.grpc.StatusRuntimeException
+import io.grpc.StatusException
 import io.grpc.inprocess.InProcessChannelBuilder
 import io.grpc.inprocess.InProcessServerBuilder
-import io.grpc.stub.StreamObserver
+import io.mockk.coEvery
+import io.mockk.justRun
+import io.mockk.mockk
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.springframework.web.reactive.function.client.WebClient
+import kotlin.test.assertFailsWith
+import tern.domain.LanguageCode
 import tern.domain.Message
 import tern.domain.MessageId
 import tern.domain.MessageText
-import tern.grpc.TernServiceGrpc
+import tern.grpc.TernServiceGrpcKt
 import tern.grpc.TernServiceOuterClass.GetResponse
 import tern.grpc.TernServiceOuterClass.SaveRequest
 import tern.grpc.TernServiceOuterClass.SaveResponse
+import tern.tapi.TapiDownloader
+import tern.translate.Detection
+import tern.translate.LanguageDetector
 import java.util.UUID
 
 /**
  * Runs against a real gRPC server over the in-process transport, so the stub, the status codes
  * and the mapping are all genuinely exercised - only the remote implementation is faked.
  *
- * tapi is pointed at a dead port on purpose: the download is a fire-and-forget side effect and
- * must never affect the outcome of a save.
+ * The tapi download is stubbed out: it is a fire-and-forget side effect with its own tests in
+ * TapiDownloaderTest, and must never affect the outcome of a save.
  */
 class ArticServiceTest {
 
@@ -37,6 +45,8 @@ class ArticServiceTest {
     private lateinit var service: ArticService
 
     private var behaviour: FakeAntarctic = FakeAntarctic()
+    private val languageDetector = mockk<LanguageDetector>()
+    private val tapiDownloader = mockk<TapiDownloader>()
 
     @BeforeEach
     fun startServer() {
@@ -47,7 +57,9 @@ class ArticServiceTest {
             .build()
             .start()
         channel = InProcessChannelBuilder.forName(name).directExecutor().build()
-        service = ArticService(channel, WebClient.create(DEAD_TAPI), DEAD_TAPI)
+        coEvery { languageDetector.detect(any()) } returns Detection.Unavailable
+        justRun { tapiDownloader.download() }
+        service = ArticService(channel, languageDetector, tapiDownloader)
     }
 
     @AfterEach
@@ -57,7 +69,7 @@ class ArticServiceTest {
     }
 
     @Test
-    fun `maps every message antarctic streams back into the domain`() {
+    fun `maps every message antarctic streams back into the domain`() = runTest {
         val id = UUID.randomUUID()
         behaviour.messages = listOf(
             GetResponse.newBuilder().setId(id.toString()).setText("Hello!").build(),
@@ -71,7 +83,7 @@ class ArticServiceTest {
     }
 
     @Test
-    fun `returns the saved message carrying the id antarctic assigned`() {
+    fun `returns the saved message carrying the id antarctic assigned`() = runTest {
         val id = UUID.randomUUID()
         behaviour.assignedId = id
 
@@ -83,37 +95,53 @@ class ArticServiceTest {
     }
 
     @Test
-    fun `a failing save is surfaced to the caller instead of being reported as success`() {
-        behaviour.failWith = Status.UNAVAILABLE
+    fun `the detected language travels with the message and comes back on it`() = runTest {
+        coEvery { languageDetector.detect(MessageText("Bonjour!")) } returns Detection.Detected(LanguageCode("fr"))
 
-        assertThatThrownBy { service.save(Message(MessageText("Privet!"))) }
-            .isInstanceOf(StatusRuntimeException::class.java)
-            .extracting { Status.fromThrowable(it as Throwable).code }
-            .isEqualTo(Status.Code.UNAVAILABLE)
+        val saved = service.save(Message(MessageText("Bonjour!")))
+
+        assertThat(saved.language).isEqualTo(LanguageCode("fr"))
+        assertThat(behaviour.receivedLanguages).containsExactly("fr")
     }
 
-    private class FakeAntarctic : TernServiceGrpc.TernServiceImplBase() {
+    @Test
+    fun `a detector that is down does not stop the message being saved`() = runTest {
+        coEvery { languageDetector.detect(any()) } returns Detection.Unavailable
+
+        val saved = service.save(Message(MessageText("Hello!")))
+
+        assertThat(saved.id).isNotNull()
+        assertThat(saved.language).isNull()
+        assertThat(behaviour.receivedLanguages).containsExactly("")
+    }
+
+    @Test
+    fun `a failing save is surfaced to the caller instead of being reported as success`() = runTest {
+        behaviour.failWith = Status.UNAVAILABLE
+
+        val thrown = assertFailsWith<StatusException> { service.save(Message(MessageText("Privet!"))) }
+
+        assertThat(thrown.status.code).isEqualTo(Status.Code.UNAVAILABLE)
+    }
+
+    /** The fake speaks coroutines too, so the whole test is Flow and suspend end to end. */
+    private class FakeAntarctic : TernServiceGrpcKt.TernServiceCoroutineImplBase() {
         var messages: List<GetResponse> = emptyList()
         var assignedId: UUID = UUID.randomUUID()
         var failWith: Status? = null
         val received = mutableListOf<String>()
+        val receivedLanguages = mutableListOf<String>()
 
-        override fun getMessage(request: Empty, responseObserver: StreamObserver<GetResponse>) {
-            failWith?.let { return responseObserver.onError(it.asRuntimeException()) }
-            messages.forEach(responseObserver::onNext)
-            responseObserver.onCompleted()
+        override fun getMessage(request: Empty): Flow<GetResponse> = flow {
+            failWith?.let { throw it.asRuntimeException() }
+            messages.forEach { emit(it) }
         }
 
-        override fun saveMessage(request: SaveRequest, responseObserver: StreamObserver<SaveResponse>) {
-            failWith?.let { return responseObserver.onError(it.asRuntimeException()) }
+        override suspend fun saveMessage(request: SaveRequest): SaveResponse {
+            failWith?.let { throw it.asRuntimeException() }
             received += request.text
-            responseObserver.onNext(SaveResponse.newBuilder().setId(assignedId.toString()).build())
-            responseObserver.onCompleted()
+            receivedLanguages += request.language
+            return SaveResponse.newBuilder().setId(assignedId.toString()).build()
         }
-    }
-
-    private companion object {
-        /** Nothing listens here; any attempt to reach tapi fails fast. */
-        const val DEAD_TAPI = "http://localhost:1"
     }
 }

@@ -34,23 +34,67 @@ curl -i -X POST localhost:8080/ -d '{"text":"hi"}' -H 'Content-Type: application
                                           # response carries X-Request-Id: b5483e6a
 ````
 
-Which gives:
+By default each service logs exactly one line per request - the point it enters - so the shape of
+a request is visible without the logs becoming unreadable:
 
 ````
 artic     [b5483e6a] HTTP --> POST / - request received
-artic     [b5483e6a] POST / - Posting message: hi
-artic     [b5483e6a] Artic - Saving message: hi
-artic     [b5483e6a] gRPC --> tern.grpc.TernService/SaveMessage - calling antarctic
 antarctic [b5483e6a] gRPC --> tern.grpc.TernService/SaveMessage - call received
-antarctic [b5483e6a] Antarctic - Saved message 0db5ebb1-... to the database
-antarctic [b5483e6a] gRPC <-- tern.grpc.TernService/SaveMessage - OK in 150 ms
-artic     [b5483e6a] gRPC <-- tern.grpc.TernService/SaveMessage - OK in 198 ms
-artic     [b5483e6a] Artic - Antarctic saved message 0db5ebb1-...
-artic     [b5483e6a] HTTP <-- POST / - responded 201 in 499 ms
+````
+
+Probe traffic to `/actuator` is excluded, since kubelet and compose hit it every few seconds.
+Failures are never silent at this level: they are logged by the exception handler on each side.
+
+`LOG_LEVEL=DEBUG` turns the same request into the full hop-by-hop trace, with statuses and timings:
+
+````
+LOG_LEVEL=DEBUG docker compose up -d
+````
+
+````
+INFO  artic     [b5483e6a] HTTP --> POST / - request received
+DEBUG artic     [b5483e6a] POST / - Posting message: hi
+DEBUG artic     [b5483e6a] Artic - Saving message: hi
+DEBUG artic     [b5483e6a] gRPC --> tern.grpc.TernService/SaveMessage - calling antarctic
+INFO  antarctic [b5483e6a] gRPC --> tern.grpc.TernService/SaveMessage - call received
+DEBUG antarctic [b5483e6a] Antarctic - Saved message 2d10ae23-... to the database
+DEBUG antarctic [b5483e6a] gRPC <-- tern.grpc.TernService/SaveMessage - OK in 93 ms
+DEBUG artic     [b5483e6a] gRPC <-- tern.grpc.TernService/SaveMessage - OK in 224 ms
+DEBUG artic     [b5483e6a] Artic - Antarctic saved message 2d10ae23-...
+DEBUG artic     [b5483e6a] HTTP <-- POST / - responded 201 in 412 ms
 ````
 
 Calls made straight to the gRPC port (`localhost:9090`) without the header get an id generated on
 the antarctic side, so they are traceable too.
+
+#### Third-party language detection
+
+On save, artic asks [LibreTranslate](https://libretranslate.com) what language the message is
+written in and stores the answer alongside it. It is off by default because the image is ~800MB
+and downloads its models on first boot:
+
+````
+docker compose --profile translate up -d --build
+curl -s -X POST localhost:8080/ -H 'Content-Type: application/json' -d '{"text":"Bonjour mon ami"}'
+# {"id":"12e90c25-...","text":"Bonjour mon ami","language":"fr"}
+````
+
+Point it at the hosted service instead by setting `TRANSLATE_URL=https://libretranslate.com` and
+`TRANSLATE_API_KEY`; nothing else changes.
+
+The detector is treated as something that is allowed to be down. `LanguageDetector` never
+throws - a timeout, a 5xx, an unparseable body or an unrecognised code all come back as null,
+and the message saves without a language:
+
+````
+docker compose stop libretranslate
+curl -s -X POST localhost:8080/ -H 'Content-Type: application/json' -d '{"text":"Bonjour encore"}'
+# {"id":"9d3daa94-...","text":"Bonjour encore","language":null}   - still 201, in under 400ms
+````
+
+That is why the call has a short response timeout (it sits on the POST path, so a slow third
+party must not stall callers), one retry limited to the transient cases, and a nullable
+`language` column added by `V2__add_language.sql`.
 
 #### Health and metrics
 
@@ -124,10 +168,16 @@ In order to have a loadTest and see traffic animation on Kiali
 To setup Locust, clone this project https://github.com/Jouda-Hidri/tern-lt
 
 #### Tapi
-On the gRPC callback, Tapi is called    
+After a message is saved, Tapi is called    
 <img width="768" alt="Screenshot 2023-07-03 at 13 12 50" src="https://github.com/Jouda-Hidri/Tern/assets/30729085/17763716-9c9e-4247-9e4b-70ad0819b54b">    
 
 To setup Tapi, clone this project: https://github.com/Jouda-Hidri/tapi
+
+`TapiDownloader` treats it the same way as the language detector - as something allowed to be
+down. It streams the CSV line by line so the file is never held in memory whole, runs off the
+request thread so a save never waits on it, retries once on a transient failure, and logs and
+drops anything else. Its read timeout is an *idle* timeout rather than a cap on the whole
+transfer, so a large but progressing download is fine and only a stalled one is cut off.
 
 ## Tests
 

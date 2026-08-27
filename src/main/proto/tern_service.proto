@@ -5,10 +5,14 @@ import "google/protobuf/empty.proto";
 message GetResponse {
   string text = 1;
   string id = 2;
+  // Empty when the detector was unavailable. New field numbers are only ever appended, so
+  // an older peer that does not know about them keeps working.
+  string language = 3;
 }
 
 message SaveRequest {
   string text = 1;
+  string language = 2;
 }
 
 message SaveResponse {

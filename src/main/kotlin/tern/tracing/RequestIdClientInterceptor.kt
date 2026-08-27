@@ -12,8 +12,8 @@ import io.grpc.Status
 import org.slf4j.LoggerFactory
 
 /**
- * Carries the current request id across the wire to antarctic, and logs the outbound call
- * and its final status so the artic side of the hop is visible on its own.
+ * Carries the current request id across the wire to antarctic. The call is logged at DEBUG
+ * only: antarctic logs its own entry, so at INFO the hop is already accounted for once.
  */
 class RequestIdClientInterceptor : ClientInterceptor {
     private val log = LoggerFactory.getLogger(RequestIdClientInterceptor::class.java)
@@ -31,14 +31,14 @@ class RequestIdClientInterceptor : ClientInterceptor {
         ) {
             override fun start(responseListener: Listener<RespT>, headers: Metadata) {
                 if (requestId != null) headers.put(RequestId.METADATA_KEY, requestId)
-                log.info("gRPC --> {} - calling antarctic", method.fullMethodName)
+                log.debug("gRPC --> {} - calling antarctic", method.fullMethodName)
 
                 val listener = object :
                     ForwardingClientCallListener.SimpleForwardingClientCallListener<RespT>(responseListener) {
                     override fun onClose(status: Status, trailers: Metadata) {
                         RequestId.withRequestId(requestId) {
                             val took = System.currentTimeMillis() - startedAt
-                            log.info(
+                            log.debug(
                                 "gRPC <-- {} - {} in {} ms",
                                 method.fullMethodName, status.code, took,
                             )

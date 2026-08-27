@@ -2,73 +2,63 @@ package tern.artic
 
 import com.google.protobuf.Empty
 import io.grpc.ManagedChannel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.toList
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.client.WebClient
-import reactor.core.publisher.Flux
 import tern.domain.Message
 import tern.domain.MessageId
-import tern.grpc.TernServiceGrpc
-import tern.tracing.RequestId
+import tern.grpc.TernServiceGrpcKt
+import tern.tapi.TapiDownloader
+import tern.translate.Detection
+import tern.translate.LanguageDetector
 import tern.transport.toDomain
 import tern.transport.toSaveRequest
 
 @Service
 class ArticService(
     channel: ManagedChannel,
-    private val tapiClient: WebClient,
-    @Value("\${tern.tapi.url}") private val tapiUrl: String,
+    private val languageDetector: LanguageDetector,
+    private val tapiDownloader: TapiDownloader,
 ) {
     private val logger = LoggerFactory.getLogger(ArticService::class.java)
-    private val blockingStub = TernServiceGrpc.newBlockingStub(channel)
 
-    fun find(): List<Message> {
-        logger.info("Artic - Retrieving messages")
-        val found = blockingStub.getMessage(Empty.getDefaultInstance())
-            .asSequence()
-            .map { it.toDomain() }
-            .toList()
-        logger.info("Artic - Received ${found.size} message(s) from antarctic")
-        return found
-    }
+    /** Built lazily, so the channel is only dialled once something actually needs it. */
+    private val antarctic by lazy { TernServiceGrpcKt.TernServiceCoroutineStub(channel) }
 
     /**
-     * Saves through antarctic and returns the persisted message. This blocks on purpose: the
-     * previous async version let the HTTP layer answer 200 before the write had happened, so a
-     * failure downstream was reported to the caller as success.
+     * GetMessage is server-streaming, so the natural return type is a [Flow]: messages are
+     * mapped as they arrive rather than after the last one has landed.
      */
-    fun save(message: Message): Message {
-        logger.info("Artic - Saving message: ${message.text}")
-        val response = blockingStub.saveMessage(message.toSaveRequest())
-        val saved = message.copy(id = MessageId.of(response.id))
-        logger.info("Artic - Antarctic saved message ${saved.id}")
+    fun findAsFlow(): Flow<Message> {
+        logger.debug("Artic - Retrieving messages")
+        return antarctic.getMessage(Empty.getDefaultInstance()).map { it.toDomain() }
+    }
 
-        streamFromTapi()
+    suspend fun find(): List<Message> = findAsFlow().toList()
+        .also { logger.debug("Artic - Received ${it.size} message(s) from antarctic") }
+
+    /**
+     * Saves through antarctic and returns the persisted message. Suspends rather than blocking,
+     * but still waits for the outcome: an earlier version answered the caller before the write
+     * had happened, so a failure downstream was reported to them as success.
+     */
+    suspend fun save(message: Message): Message {
+        logger.debug("Artic - Saving message: ${message.text}")
+
+        // Detected here rather than in antarctic so the third-party call stays on the edge, and
+        // travels on with the message. Absent when the detector is down - by design.
+        val enriched = when (val detection = languageDetector.detect(message.text)) {
+            is Detection.Detected -> message.copy(language = detection.code)
+            Detection.Unrecognised, Detection.Unavailable -> message
+        }
+
+        val response = antarctic.saveMessage(enriched.toSaveRequest())
+        val saved = enriched.copy(id = MessageId.of(response.id))
+        logger.debug("Artic - Antarctic saved message ${saved.id}")
+
+        tapiDownloader.download()
         return saved
-    }
-
-    /**
-     * Fires the tapi download without blocking the caller: it is a side effect of saving, not
-     * part of the answer. tapi is a separate deployment and may not be running at all (it is
-     * absent from docker-compose), so failures are logged rather than propagated.
-     *
-     * `bodyToFlux(String)` splits the response on newlines as it arrives, which is the point of
-     * the exercise - the CSV is never held in memory in one piece.
-     */
-    private fun streamFromTapi() {
-        val requestId = RequestId.current()
-        tapiClient.get()
-            .retrieve()
-            .bodyToFlux(String::class.java)
-            .doOnNext { line -> RequestId.withRequestId(requestId) { logger.info("Tapi - $line") } }
-            .doOnComplete { RequestId.withRequestId(requestId) { logger.info("Tapi - Download completed.") } }
-            .doOnError { e ->
-                RequestId.withRequestId(requestId) {
-                    logger.warn("Tapi - Unreachable at $tapiUrl, skipping download: ${e.message}")
-                }
-            }
-            .onErrorResume { Flux.empty() }
-            .subscribe()
     }
 }

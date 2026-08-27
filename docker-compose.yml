@@ -10,6 +10,8 @@ services:
         condition: service_healthy
       antarctic:
         condition: service_healthy
+      tapi:
+        condition: service_healthy
     environment:
       - POSTGRES_PASSWORD=password
       - POSTGRES_USER=postgres
@@ -17,6 +19,10 @@ services:
       - POSTGRES_HOST=dbpostgresql
       - ANTARCTIC_TARGET=antarctic:9090
       - SERVICE_NAME=artic
+      # LOG_LEVEL=DEBUG turns the one-line-per-entry default into the full hop-by-hop trace
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TRANSLATE_URL=${TRANSLATE_URL:-http://libretranslate:5000}
+      - TAPI_URL=${TAPI_URL:-http://tapi:5000}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 5s
@@ -36,6 +42,7 @@ services:
       - POSTGRES_DB=polldb
       - POSTGRES_HOST=dbpostgresql
       - SERVICE_NAME=antarctic
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 5s
@@ -56,3 +63,61 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+
+  # Third-party language detection, behind a profile because the image is ~800MB and downloads
+  # its models on first boot. Left out, artic simply stores messages without a language, which
+  # is the degraded path worth demonstrating: `docker compose up` stays fast and still works.
+  # Start it with: docker compose --profile translate up -d
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    profiles: [ "translate" ]
+    ports:
+      - "5050:5000"
+    environment:
+      # Only the languages this project's sample data uses, so startup stays reasonable.
+      - LT_LOAD_ONLY=en,fr,ru,es
+      - LT_DISABLE_WEB_UI=true
+    volumes:
+      # Models are downloaded on first boot; keeping them means later starts are quick.
+      - libretranslate-models:/home/libretranslate/.local
+    healthcheck:
+      # The image ships no curl or wget, so the check uses the python it runs on.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/languages', timeout=5)"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 180s
+
+  # The CSV source artic streams after a save. Built straight from its own repo, since the
+  # image is not published anywhere. Three things there need working around:
+  #   - its Dockerfile runs api22:app, a module that does not exist
+  #   - api.py reads a large_file.csv that is not checked in; api2.py generates one instead,
+  #     which is the streaming demo anyway
+  #   - requirements.txt pins Flask 2.0.1 but not Werkzeug, and Werkzeug 3 dropped url_quote,
+  #     so an unpinned build fails at import
+  # Fixing these in the tapi repo itself would let all of this collapse to a context and a port.
+  tapi:
+    build:
+      context: https://github.com/Jouda-Hidri/tapi.git
+      dockerfile_inline: |
+        FROM python:3.9
+        WORKDIR /app
+        COPY requirements.txt .
+        RUN pip install --no-cache-dir -r requirements.txt "werkzeug<2.1" gunicorn
+        COPY . .
+        EXPOSE 5000
+    # Each save triggers a fresh 200MB stream, so a single sync worker serialises concurrent
+    # POSTs and they time each other out. Threaded workers keep them independent.
+    command: ["gunicorn", "api2:app", "-b", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "--timeout", "600"]
+    ports:
+      - "5000:5000"
+    healthcheck:
+      # A GET would stream 200MB, so the check only proves the port is accepting connections.
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 5000), 5)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  libretranslate-models:

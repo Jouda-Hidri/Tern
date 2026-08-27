@@ -2,8 +2,11 @@ package tern
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.boot.test.web.client.TestRestTemplate
 import org.springframework.boot.test.web.client.exchange
 import org.springframework.http.HttpEntity
@@ -19,6 +22,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.utility.DockerImageName
 import tern.artic.ApiError
 import tern.artic.MessageRequest
+import tern.artic.MessageStats
 import tern.artic.MessageResponse
 
 /**
@@ -28,6 +32,7 @@ import tern.artic.MessageResponse
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
+@ExtendWith(OutputCaptureExtension::class)
 class MessageApiIntegrationTest {
 
     @Autowired
@@ -46,6 +51,30 @@ class MessageApiIntegrationTest {
         assertThat(listed.statusCode).isEqualTo(HttpStatus.OK)
         assertThat(listed.body).extracting("text").contains("Hello!")
         assertThat(listed.body?.map { it.id }).doesNotContainNull()
+    }
+
+    @Test
+    fun `a message still saves when the third-party detector cannot be reached`() {
+        val created = rest.postForEntity("/", json(MessageRequest("Bonjour!")), MessageResponse::class.java)
+
+        assertThat(created.statusCode).isEqualTo(HttpStatus.CREATED)
+        assertThat(created.body?.id).isNotNull()
+        assertThat(created.body?.language).isNull()
+    }
+
+    @Test
+    fun `stats counts messages by language, with undetected ones last`() {
+        listOf("Bonjour!", "Hello!", "Privet!").forEach {
+            rest.postForEntity("/", json(MessageRequest(it)), MessageResponse::class.java)
+        }
+
+        val stats = rest.getForEntity("/stats", MessageStats::class.java)
+
+        assertThat(stats.statusCode).isEqualTo(HttpStatus.OK)
+        assertThat(stats.body?.total).isGreaterThanOrEqualTo(3)
+        // The detector is unreachable in this test, so everything lands under unknown.
+        assertThat(stats.body?.byLanguage).containsKey("unknown")
+        assertThat(stats.body?.byLanguage?.values?.sum()).isEqualTo(stats.body?.total)
     }
 
     @Test
@@ -105,6 +134,15 @@ class MessageApiIntegrationTest {
         assertThat(readiness.body).doesNotContain("antarctic")
     }
 
+    @Test
+    fun `probe traffic is not logged, real traffic is`(output: CapturedOutput) {
+        rest.getForEntity("/actuator/health/readiness", String::class.java)
+        rest.getForEntity("/", String::class.java)
+
+        assertThat(output.all).doesNotContain("HTTP --> GET /actuator")
+        assertThat(output.all).contains("HTTP --> GET / - request received")
+    }
+
     private fun json(body: Any) =
         HttpEntity(body, HttpHeaders().apply { contentType = MediaType.APPLICATION_JSON })
 
@@ -125,8 +163,12 @@ class MessageApiIntegrationTest {
             registry.add("spring.datasource.password", postgres::getPassword)
             registry.add("grpc.server.port") { GRPC_TEST_PORT }
             registry.add("tern.antarctic.target") { "localhost:$GRPC_TEST_PORT" }
-            // Nothing listens here; the tapi download must not affect any of these assertions.
+            // Nothing listens on either; neither the tapi download nor the third-party
+            // language detector may affect any of these assertions. The detector having no
+            // one to talk to is exactly the degraded path this asserts still works.
             registry.add("tern.tapi.url") { "http://localhost:1" }
+            registry.add("tern.translate.url") { "http://localhost:1" }
+            registry.add("tern.translate.timeout") { "200ms" }
         }
     }
 }

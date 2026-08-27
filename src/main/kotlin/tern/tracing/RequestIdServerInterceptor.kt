@@ -29,7 +29,7 @@ class RequestIdServerInterceptor : ServerInterceptor {
             override fun close(status: Status, trailers: Metadata) {
                 RequestId.withRequestId(requestId) {
                     val took = System.currentTimeMillis() - startedAt
-                    log.info("gRPC <-- {} - {} in {} ms", method, status.code, took)
+                    log.debug("gRPC <-- {} - {} in {} ms", method, status.code, took)
                 }
                 super.close(status, trailers)
             }

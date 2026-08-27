@@ -1,6 +1,7 @@
 package tern.artic
 
 import io.grpc.Status
+import io.grpc.StatusException
 import io.grpc.StatusRuntimeException
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -32,9 +33,15 @@ class ApiExceptionHandler {
         return respond(HttpStatus.BAD_REQUEST, "Request body is malformed or missing required fields")
     }
 
-    @ExceptionHandler(StatusRuntimeException::class)
-    fun onGrpcFailure(e: StatusRuntimeException): ResponseEntity<ApiError> {
-        val status = when (e.status.code) {
+    /**
+     * Both gRPC exception types are handled: the coroutine stubs throw the checked
+     * [StatusException], the blocking ones [StatusRuntimeException]. Matching only the latter
+     * silently turned an antarctic outage back into a 500.
+     */
+    @ExceptionHandler(StatusException::class, StatusRuntimeException::class)
+    fun onGrpcFailure(e: Exception): ResponseEntity<ApiError> {
+        val grpcStatus = Status.fromThrowable(e)
+        val status = when (grpcStatus.code) {
             Status.Code.INVALID_ARGUMENT -> HttpStatus.BAD_REQUEST
             Status.Code.NOT_FOUND -> HttpStatus.NOT_FOUND
             Status.Code.PERMISSION_DENIED -> HttpStatus.FORBIDDEN
@@ -43,8 +50,8 @@ class ApiExceptionHandler {
             Status.Code.UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE
             else -> HttpStatus.INTERNAL_SERVER_ERROR
         }
-        logger.error("Antarctic call failed with ${e.status.code}, answering $status", e)
-        return respond(status, "Antarctic is ${e.status.code.name.lowercase().replace('_', ' ')}")
+        logger.error("Antarctic call failed with ${grpcStatus.code}, answering $status", e)
+        return respond(status, "Antarctic is ${grpcStatus.code.name.lowercase().replace('_', ' ')}")
     }
 
     @ExceptionHandler(Exception::class)

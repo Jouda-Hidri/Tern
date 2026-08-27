@@ -6,11 +6,19 @@ tern:
     target: ${ANTARCTIC_TARGET:antarctic.default.svc.cluster.local:30000}
   tapi:
     url: ${TAPI_URL:http://tapi.default.svc.cluster.local:5000}
+  translate:
+    # Third-party language detection. Points at the LibreTranslate container that
+    # `docker compose --profile translate up` runs; set it to https://libretranslate.com
+    # with an api-key to use the hosted one instead. Unreachable is a supported state:
+    # the message still saves, just without a language.
+    url: ${TRANSLATE_URL:http://libretranslate:5000}
+    api-key: ${TRANSLATE_API_KEY:}
+    timeout: ${TRANSLATE_TIMEOUT:2s}
 spring:
   flyway:
     baselineOnMigrate: true
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST}:5432/postgres
+    url: jdbc:postgresql://${POSTGRES_HOST}:5432/${POSTGRES_DB:postgres}
     driver-class-name: org.postgresql.Driver
     username: ${POSTGRES_USER} #postgres
     password: ${POSTGRES_PASSWORD} #password
@@ -35,6 +43,10 @@ management:
     readinessstate:
       enabled: true
 logging:
+  level:
+    # At INFO each service logs one line per request: the point it enters. Set this to DEBUG
+    # (or LOGGING_LEVEL_TERN=DEBUG) for the full hop-by-hop trace with statuses and timings.
+    tern: ${LOG_LEVEL:INFO}
   pattern:
     # Puts the per-request id next to the level, so `docker compose logs -f` can be grepped
     # by id to follow one request across artic and antarctic. SERVICE_NAME labels which of
