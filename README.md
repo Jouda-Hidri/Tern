@@ -151,14 +151,19 @@ different: without it there is nothing to store into.
 | Stop this | What happens |
 | --- | --- |
 | `docker compose stop libretranslate` | `201` as usual; the message stays under `unknown` in `/stats` |
-| `docker compose stop antarctic` | `POST` answers `202`, `GET` answers `503` or `504` |
+| `docker compose stop antarctic` | `POST` answers `202` then `503`, `GET` answers `504` then `503` |
 
 Readiness deliberately stays `UP` through all of it. Artic still works, and failing readiness
 would pull it out of the load balancer too - turning one outage into two.
 
-`GET` gives 503 if gRPC already knew the connection was dead, 504 if the call had to wait out
-`ANTARCTIC_DEADLINE` first. After antarctic returns, the next request or two may still fail
-while gRPC backs off; it clears in seconds.
+Which code comes back depends on what gRPC knows. While the call still has to wait out
+`ANTARCTIC_DEADLINE`, the write may or may not have landed - `POST` answers `202` and `GET`
+answers `504`. Once gRPC has marked the connection dead it fails in milliseconds, and the
+request definitely did not reach the database, so both answer `503`. Under Kubernetes, Envoy
+knows immediately that no antarctic endpoint is healthy, so `503` starts from the first call.
+
+After antarctic returns, the next request or two may still fail while gRPC backs off; it
+clears once antarctic finishes starting.
 
 ## Health and metrics
 
