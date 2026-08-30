@@ -51,6 +51,8 @@ spec:
                   key: postgres_host
             - name: SERVICE_NAME
               value: "antarctic"
+            - name: TRANSLATE_URL
+              value: ""
           ports:
             - containerPort: 9090
             - containerPort: 8080   # actuator only; no Service points at it

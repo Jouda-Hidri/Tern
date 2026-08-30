@@ -27,15 +27,18 @@ class LanguageDetectorTest {
     @BeforeEach
     fun startServer() {
         server = MockWebServer().apply { start() }
+        val baseUrl = server.url("/").toString().trimEnd('/')
+        detector = LanguageDetector(client(baseUrl), Duration.ofMillis(500), baseUrl)
+    }
+
+    private fun client(baseUrl: String): WebClient {
         val httpClient = HttpClient.create()
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 500)
             .responseTimeout(Duration.ofMillis(500))
-        detector = LanguageDetector(
-            WebClient.builder()
-                .baseUrl(server.url("/").toString().trimEnd('/'))
-                .clientConnector(ReactorClientHttpConnector(httpClient))
-                .build()
-        )
+        return WebClient.builder()
+            .baseUrl(baseUrl)
+            .clientConnector(ReactorClientHttpConnector(httpClient))
+            .build()
     }
 
     @AfterEach
@@ -64,6 +67,15 @@ class LanguageDetectorTest {
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/detect")
         assertThat(recorded.body.readUtf8()).isEqualTo("""{"q":"Hello!"}""")
+    }
+
+    @Test
+    fun `no configured detector is not called at all, rather than called and waited on`() = runTest {
+        val unconfigured = LanguageDetector(client(server.url("/").toString().trimEnd('/')), Duration.ofMillis(500), "")
+
+        assertThat(unconfigured.detect("Bonjour!")).isEmpty()
+
+        assertThat(server.requestCount).isZero()
     }
 
     @Test

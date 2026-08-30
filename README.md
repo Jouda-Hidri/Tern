@@ -3,8 +3,8 @@
 Tern stores short text messages and reports how many of them are written in each language.
 
 `POST /` stores a message, `GET /` lists them back, `GET /stats` counts them by language. The
-language is never supplied by the caller: once a message has been stored, the service asks a
-detector what it was written in and records the answer, so `/stats` fills itself in.
+language is never supplied by the caller: the service asks a detector what the message was
+written in and stores that alongside it, so `/stats` fills itself in.
 
 The service is mid-migration, which is why there are two of it. `artic` is the new version and
 takes the traffic; `antarctic` is the legacy version and still owns the database. Artic reaches
@@ -13,8 +13,9 @@ connection instead of another REST service in the chain. Both roles run from the
 
 ````
     you ──HTTP──▶ artic ──gRPC──▶ antarctic ──▶ postgres
-                    │
-                    └──▶ libretranslate   detects the message language, after the response (optional)
+                                      │
+                                      └──▶ libretranslate   detects the language before the
+                                                            write, so it is stored once (optional)
 ````
 
 | Service | Port | What it is |
@@ -66,13 +67,15 @@ Send your own id with `-H 'X-Request-Id: my-id'` and it is used instead of a gen
 HTTP/1.1 201
 X-Request-Id: 5f2a91c4
 
-{"text":"Bonjour mon ami, comment vas-tu"}
+{"text":"Bonjour mon ami, comment vas-tu","language":"fr"}
 ````
 
-Language detection does not happen on this path. The message is stored first and the response
-sent; detection runs afterwards and stores the result with a second call to antarctic. So the
-language appears in `/stats` a moment later, not in this response. Short inputs are hard to
-detect: a whole sentence gives far better results than `"Bonjour!"`.
+Antarctic detects the language before it inserts the row, so the message is written once, with
+its language already on it. That happens on this path: a `POST` waits for the detector, which
+answers in single-digit milliseconds when it is up and is bounded by `TRANSLATE_TIMEOUT` when it
+is not - which is why the language comes back in the response rather than appearing later. It is
+`unknown` when the detector could not name one, and on a `202`, where nothing is confirmed.
+Short inputs are hard to detect: a whole sentence gives far better results than `"Bonjour!"`.
 
 ### `GET /` - list every message
 
@@ -82,8 +85,8 @@ curl -s localhost:8080/ | python3 -m json.tool
 
 ### `GET /stats` - counts by language
 
-The only place the detected language is exposed. It is eventually consistent: a message posted
-a moment ago may still be counted under `unknown`.
+Counts by language across every message. A message counts under its language as soon as the
+`POST` returns - the language is written with it, not filled in afterwards.
 
 ````
 curl -s localhost:8080/stats
@@ -93,8 +96,8 @@ curl -s localhost:8080/stats
 {"total":3,"byLanguage":{"en":1,"es":1,"fr":1}}
 ````
 
-`unknown` counts messages whose language is not known yet - either detection has not finished,
-or the detector was unavailable. It always sorts last.
+`unknown` counts messages the detector could not name - it was unavailable, or it had nothing
+confident to say. It always sorts last.
 
 The bundled detector loads `en`, `fr`, `ru` and `es` only, so anything else is reported as the
 closest of those rather than correctly.
@@ -159,12 +162,14 @@ DEBUG artic     [5f2a91c4] HTTP <-- POST / - responded 201 in 1635 ms
 
 ## When things break
 
-The detector is allowed to be down - it cannot stop a message being stored. Antarctic is
-different: without it there is nothing to store into.
+The detector is allowed to be down - it cannot stop a message being stored. It is on the write
+path now, though, so it is no longer free: a `POST` waits `TRANSLATE_TIMEOUT` for it before
+giving up and storing the message without a language. Antarctic is different: without it there
+is nothing to store into.
 
 | Stop this | What happens |
 | --- | --- |
-| `docker compose stop libretranslate` | `201` as usual; the message stays under `unknown` in `/stats` |
+| `docker compose stop libretranslate` | `201` still, one `TRANSLATE_TIMEOUT` slower; the message counts as `unknown` in `/stats` |
 | `docker compose stop antarctic` | `POST` answers `202` then `503`, `GET` answers `504` then `503` |
 
 Which code comes back depends on what gRPC knows. While the call still has to wait out
@@ -201,8 +206,8 @@ Everything is defaulted for Kubernetes and overridden by compose, so neither nee
 | `POSTGRES_HOST` / `_DB` / `_USER` / `_PASSWORD` | - / `postgres` | Database connection |
 | `ANTARCTIC_TARGET` | `antarctic.default.svc.cluster.local:30000` | Where artic finds antarctic |
 | `ANTARCTIC_DEADLINE` | `2s` | Bounds every gRPC call, so an unreachable antarctic fails fast |
-| `TRANSLATE_URL` | `http://libretranslate:5000` | Detector; point at `https://libretranslate.com` with `TRANSLATE_API_KEY` to use the hosted one |
-| `TRANSLATE_TIMEOUT` | `2s` | How long the background detection waits before giving up |
+| `TRANSLATE_URL` | `http://libretranslate:5000` | Detector, read by antarctic. Empty means no detector, and the call is skipped rather than attempted |
+| `TRANSLATE_TIMEOUT` | `1s` | What a `POST` waits for the detector before storing without a language. Warm calls take milliseconds; the first after a restart pays connection setup, so a tighter value stores the first message or two as `unknown` for good. Must be shorter than `ANTARCTIC_DEADLINE` or the application refuses to start: detection runs inside the gRPC call, so a longer timeout means the deadline cancels the write instead of delaying it |
 | `LOG_LEVEL` | `INFO` | `DEBUG` for the full trace |
 | `SERVICE_NAME` | `tern` | Which role this container is playing, shown in every log line |
 
@@ -212,8 +217,9 @@ Everything is defaulted for Kubernetes and overridden by compose, so neither nee
 mvn verify
 ````
 
-Needs Docker running, and **JDK 11-17** - the Kotlin 1.7.10 compiler cannot parse the version
-string of newer JDKs, which is why CI pins Temurin 17. If `mvn -v` reports something newer:
+Needs Docker running, and **JDK 11-21** - the Kotlin 1.7.10 compiler cannot parse the version
+string of much newer JDKs and fails outright on 26, which is why CI pins Temurin 17. If `mvn -v`
+reports something newer:
 
 ````
 JAVA_HOME=$(/usr/libexec/java_home -v 17) mvn verify
@@ -224,6 +230,13 @@ Unit tests cover the gRPC adapter's error translation and the HTTP status mappin
 `LanguageDetectorTest` runs the detector against a MockWebServer to check what it does on
 timeouts, 5xx and malformed bodies. `MessageApiIntegrationTest` covers the whole path - HTTP
 into artic, gRPC to antarctic, a Flyway-migrated Postgres in a Testcontainer, and back.
+
+`EndToEndTest` covers the table in "When things break". Artic's channel goes through a proxy the
+test can make hang or refuse, which is what makes an antarctic outage expressible at all when
+both roles run in the same JVM, and it pins the answers each mode produces - `202`/`504` while
+the deadline is being waited out, `503` once the connection is known to be dead.
+`TernConfigurationTest` checks that a detector timeout longer than the gRPC deadline is refused
+at startup, since that combination loses messages rather than delaying them.
 
 ## Running it on Kubernetes with Minikube
 
@@ -249,6 +262,12 @@ curl localhost:8080/
 ````
 
 Language detection is not deployed here, so messages stay under `unknown` in `/stats`.
+`deployment/antarctic.yaml` sets `TRANSLATE_URL` to the empty string to say so explicitly, which
+means the call is not attempted at all. Leaving the compose default in place would not degrade
+gracefully: the name does not resolve inside the cluster and the connection hangs rather than
+failing fast, so every write would wait out `TRANSLATE_TIMEOUT` for a service that is never
+coming. Point it at a reachable detector to turn detection on - and give antarctic egress to it
+if your mesh restricts outbound traffic.
 
 Both deployments also carry a HorizontalPodAutoscaler targeting 50% CPU, capped at
 `maxReplicas: 1` so a laptop cluster stays small. Raise it to see it scale.

@@ -9,9 +9,13 @@ import net.devh.boot.grpc.server.service.GrpcService
 import org.slf4j.LoggerFactory
 import tern.grpc.TernServiceGrpcKt
 import tern.grpc.TernServiceOuterClass.*
+import tern.translate.LanguageDetector
 
 @GrpcService
-class AntarcticService(private val db: MessageRepository) : TernServiceGrpcKt.TernServiceCoroutineImplBase() {
+class AntarcticService(
+    private val db: MessageRepository,
+    private val languageDetector: LanguageDetector,
+) : TernServiceGrpcKt.TernServiceCoroutineImplBase() {
     private val logger = LoggerFactory.getLogger(AntarcticService::class.java)
 
     override suspend fun getMessage(request: Empty): GetResponse = try {
@@ -20,7 +24,6 @@ class AntarcticService(private val db: MessageRepository) : TernServiceGrpcKt.Te
         GetResponse.newBuilder()
             .addAllMessages(messages.map {
                 tern.grpc.TernServiceOuterClass.Message.newBuilder()
-                    .setId(it.id ?: "")
                     .setText(it.text)
                     .setLanguage(it.language)
                     .build()
@@ -32,18 +35,11 @@ class AntarcticService(private val db: MessageRepository) : TernServiceGrpcKt.Te
 
     override suspend fun saveMessage(request: SaveRequest): SaveResponse = try {
         logger.info("Antarctic - Request messages")
-        val result = withContext(Dispatchers.IO) {
-            db.save(Message(id = null, text = request.text, language = request.language))
+        val language = languageDetector.detect(request.text)
+        withContext(Dispatchers.IO) {
+            db.save(Message(id = null, text = request.text, language = language))
         }
-        SaveResponse.newBuilder().setId(result.id).build()
-    } catch (e: Throwable) {
-        throw e.asStatusException()
-    }
-
-    override suspend fun updateLanguage(request: UpdateLanguageRequest): Empty = try {
-        logger.info("Antarctic - Updating language of ${request.id}")
-        withContext(Dispatchers.IO) { db.updateLanguage(request.id, request.language) }
-        Empty.getDefaultInstance()
+        SaveResponse.newBuilder().setLanguage(language).build()
     } catch (e: Throwable) {
         throw e.asStatusException()
     }

@@ -12,10 +12,13 @@ data class MessageRequest(
     fun toMessage(): Message = Message(id = null, text = text)
 }
 
-// Neither the database id nor the detected language belongs here: one is a persistence detail,
-// the other is derived metadata reported by /stats.
-data class MessageResponse(val text: String) {
+const val UNKNOWN_LANGUAGE = "unknown"
+
+// The database id does not belong here: it is a persistence detail. The language does - it is
+// the point of storing the message, and it is known by the time the response is written.
+data class MessageResponse(val text: String, val language: String) {
     companion object {
-        fun from(message: Message): MessageResponse = MessageResponse(text = message.text)
+        fun from(message: Message): MessageResponse =
+            MessageResponse(text = message.text, language = message.language.ifEmpty { UNKNOWN_LANGUAGE })
     }
 }

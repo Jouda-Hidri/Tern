@@ -19,7 +19,6 @@ services:
       - SERVICE_NAME=artic
       # LOG_LEVEL=DEBUG turns the one-line-per-entry default into the full hop-by-hop trace
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - TRANSLATE_URL=${TRANSLATE_URL:-http://libretranslate:5000}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 5s
@@ -40,6 +39,7 @@ services:
       - POSTGRES_HOST=dbpostgresql
       - SERVICE_NAME=antarctic
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TRANSLATE_URL=${TRANSLATE_URL:-http://libretranslate:5000}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 5s
@@ -69,10 +69,6 @@ services:
       timeout: 3s
       retries: 15
 
-  # Third-party language detection, behind a profile because the image is ~800MB and downloads
-  # its models on first boot. Left out, artic simply stores messages without a language, which
-  # is the degraded path worth demonstrating: `docker compose up` stays fast and still works.
-  # Start it with: docker compose --profile translate up -d
   libretranslate:
     image: libretranslate/libretranslate:latest
     profiles: [ "translate" ]

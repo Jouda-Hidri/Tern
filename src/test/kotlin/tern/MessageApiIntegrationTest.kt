@@ -39,7 +39,7 @@ class MessageApiIntegrationTest {
     private lateinit var rest: TestRestTemplate
 
     @Test
-    fun `a posted message comes back with the id the database assigned`() {
+    fun `a posted message is stored and comes back in the listing`() {
         val created = rest.postForEntity("/", json(MessageRequest("Hello!")), MessageResponse::class.java)
 
         assertThat(created.statusCode).isEqualTo(HttpStatus.CREATED)
@@ -57,6 +57,7 @@ class MessageApiIntegrationTest {
 
         assertThat(created.statusCode).isEqualTo(HttpStatus.CREATED)
         assertThat(created.body?.text).isEqualTo("Bonjour!")
+        assertThat(created.body?.language).isEqualTo("unknown")
     }
 
     @Test
@@ -166,9 +167,6 @@ class MessageApiIntegrationTest {
             registry.add("spring.datasource.password", postgres::getPassword)
             registry.add("grpc.server.port") { GRPC_TEST_PORT }
             registry.add("tern.antarctic.target") { "localhost:$GRPC_TEST_PORT" }
-            // Nothing listens on either; neither the tapi download nor the third-party
-            // language detector may affect any of these assertions. The detector having no
-            // one to talk to is exactly the degraded path this asserts still works.
             registry.add("tern.translate.url") { "http://localhost:1" }
             registry.add("tern.translate.timeout") { "200ms" }
         }

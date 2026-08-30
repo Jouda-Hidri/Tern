@@ -25,16 +25,24 @@ class TernConfiguration {
         .build()
 
     @Bean
-    fun translateClient(@Value("\${tern.translate.url}") url: String): WebClient =
-        client(url, Duration.ofSeconds(2))
+    fun translateClient(
+        @Value("\${tern.translate.url:}") url: String,
+        @Value("\${tern.translate.timeout:1s}") timeout: Duration,
+        @Value("\${tern.antarctic.deadline:2s}") deadline: Duration,
+    ): WebClient {
+        check(timeout < deadline) {
+            "tern.translate.timeout ($timeout) must be shorter than tern.antarctic.deadline " +
+                "($deadline), or a slow detector loses messages instead of delaying them"
+        }
+        return client(url, timeout)
+    }
 
-    // WebClient.create(url) has no timeouts at all, so a hung third party pins a thread.
     private fun client(url: String, timeout: Duration): WebClient {
         val httpClient = HttpClient.create()
-            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 2_000)
+            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, timeout.toMillis().toInt())
             .responseTimeout(timeout)
         return WebClient.builder()
-            .baseUrl(url)
+            .baseUrl(url.ifBlank { "http://detector-not-configured" })
             .clientConnector(ReactorClientHttpConnector(httpClient))
             .build()
     }

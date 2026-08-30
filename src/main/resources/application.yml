@@ -8,13 +8,8 @@ tern:
     # servlet async timeout and answers 500, instead of failing fast with a 503.
     deadline: ${ANTARCTIC_DEADLINE:2s}
   translate:
-    # Third-party language detection. Points at the LibreTranslate container that
-    # `docker compose --profile translate up` runs; set it to https://libretranslate.com
-    # with an api-key to use the hosted one instead. Unreachable is a supported state:
-    # the message still saves, just without a language.
     url: ${TRANSLATE_URL:http://libretranslate:5000}
-    api-key: ${TRANSLATE_API_KEY:}
-    timeout: ${TRANSLATE_TIMEOUT:2s}
+    timeout: ${TRANSLATE_TIMEOUT:1s}
 spring:
   flyway:
     baselineOnMigrate: true

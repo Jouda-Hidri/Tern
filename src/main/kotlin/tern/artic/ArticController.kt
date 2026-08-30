@@ -51,9 +51,9 @@ data class MessageStats(val total: Int, val byLanguage: Map<String, Int>) {
         fun of(messages: List<Message>): MessageStats = MessageStats(
             total = messages.size,
             byLanguage = messages
-                .groupingBy { it.language.ifEmpty { "unknown" } }
+                .groupingBy { it.language.ifEmpty { UNKNOWN_LANGUAGE } }
                 .eachCount()
-                .toSortedMap(compareBy({ it == "unknown" }, { it })),
+                .toSortedMap(compareBy({ it == UNKNOWN_LANGUAGE }, { it })),
         )
     }
 }
