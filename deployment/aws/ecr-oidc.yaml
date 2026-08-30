@@ -17,6 +17,15 @@ Parameters:
     Description: >
       Only runs on this ref may assume the role. CD is triggered by workflow_run, which reports
       the default branch, so main is the ref that matters. Widen to * only if you know why.
+      Ignored when GitHubEnvironment is set.
+
+  GitHubEnvironment:
+    Type: String
+    Default: ''
+    Description: >
+      Optional. A GitHub Environment name; when set, the role trusts only tokens minted for a
+      job in that environment rather than any job on the ref, so a required reviewer on it gates
+      every push to ECR. Set this and update the stack before adding `environment:` to cd.yml.
 
   RepositoryName:
     Type: String
@@ -32,6 +41,7 @@ Parameters:
 
 Conditions:
   ShouldCreateOidcProvider: !Equals [!Ref CreateOidcProvider, 'true']
+  GateOnEnvironment: !Not [!Equals [!Ref GitHubEnvironment, '']]
 
 Resources:
   GitHubOidcProvider:
@@ -105,8 +115,10 @@ Resources:
               StringEquals:
                 # Without the aud check the role would trust tokens minted for other audiences.
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                # And without the sub check, *any* GitHub repository could assume it.
-                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubRepository}:ref:${GitHubRef}'
+                token.actions.githubusercontent.com:sub: !If
+                  - GateOnEnvironment
+                  - !Sub 'repo:${GitHubRepository}:environment:${GitHubEnvironment}'
+                  - !Sub 'repo:${GitHubRepository}:ref:${GitHubRef}'
       Policies:
         - PolicyName: push-to-ecr
           PolicyDocument:
