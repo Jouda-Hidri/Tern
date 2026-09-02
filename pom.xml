@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>2.7.1</version>
+		<version>3.3.5</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>tern</groupId>
@@ -14,16 +14,16 @@
 	<name>artic</name>
 	<description>Artic Tern</description>
 	<properties>
-		<java.version>11</java.version>
-		<kotlin.version>1.7.10</kotlin.version>
+		<java.version>21</java.version>
+		<kotlin.version>1.9.25</kotlin.version>
 		<!-- 1.42.x / 3.17.3 are the first releases publishing osx-aarch_64 protoc binaries -->
-		<grpc.version>1.42.2</grpc.version>
-		<protoc.version>3.17.3</protoc.version>
+		<grpc.version>1.58.0</grpc.version>
+		<protoc.version>3.24.0</protoc.version>
 		<!-- Spring Boot 2.7 does not manage testcontainers, so its BOM is imported below -->
 		<testcontainers.version>1.21.4</testcontainers.version>
 		<mockk.version>1.13.5</mockk.version>
 		<mockwebserver.version>4.12.0</mockwebserver.version>
-		<grpc.kotlin.version>1.2.1</grpc.kotlin.version>
+		<grpc.kotlin.version>1.4.1</grpc.kotlin.version>
 	</properties>
 
 	<dependencyManagement>
@@ -72,28 +72,12 @@
 			<artifactId>kotlin-stdlib-jdk8</artifactId>
 		</dependency>
 		<!-- https://mvnrepository.com/artifact/org.springframework.data/spring-data-relational -->
-		<dependency>
-			<groupId>org.springframework.data</groupId>
-			<artifactId>spring-data-relational</artifactId>
-			<version>2.4.1</version>
-		</dependency>
 <!--		&lt;!&ndash; https://mvnrepository.com/artifact/org.springframework.data/spring-data-jdbc-core &ndash;&gt;-->
-		<dependency>
-			<groupId>org.springframework.data</groupId>
-			<artifactId>spring-data-jdbc-core</artifactId>
-			<version>1.2.1.RELEASE</version>
-		</dependency>
 <!--		&lt;!&ndash; https://mvnrepository.com/artifact/org.springframework.data/spring-data-jpa &ndash;&gt;-->
-		<dependency>
-			<groupId>org.springframework.data</groupId>
-			<artifactId>spring-data-jpa</artifactId>
-			<version>2.7.0</version>
-		</dependency>
 <!--		&lt;!&ndash; https://mvnrepository.com/artifact/org.springframework.data/spring-data-jdbc &ndash;&gt;-->
 		<dependency>
-			<groupId>org.springframework.data</groupId>
-			<artifactId>spring-data-jdbc</artifactId>
-<!--			<version>1.0.0.M1</version>-->
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jdbc</artifactId>
 		</dependency>
 			<dependency>
 				<groupId>org.postgresql</groupId>
@@ -103,6 +87,10 @@
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -155,11 +143,7 @@
 			<artifactId>assertj-core</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa</artifactId>
-		</dependency>
-		<dependency>
+<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-mustache</artifactId>
 		</dependency>
@@ -217,16 +201,10 @@
 			<artifactId>kotlinx-coroutines-test</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<dependency> <!-- necessary for Java 9+ -->
-			<groupId>org.apache.tomcat</groupId>
-			<artifactId>annotations-api</artifactId>
-			<version>6.0.53</version>
-			<scope>provided</scope>
-		</dependency>
-		<dependency>
+<dependency>
 			<groupId>net.devh</groupId>
 			<artifactId>grpc-server-spring-boot-starter</artifactId>
-			<version>2.13.1.RELEASE</version> <!-- pins grpc-core to ${grpc.version} -->
+			<version>3.1.0.RELEASE</version> <!-- pins grpc-core to ${grpc.version} -->
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -332,7 +310,7 @@
 									<groupId>io.grpc</groupId>
 									<artifactId>protoc-gen-grpc-kotlin</artifactId>
 									<version>${grpc.kotlin.version}</version>
-									<classifier>jdk7</classifier>
+									<classifier>jdk8</classifier>
 									<mainClass>io.grpc.kotlin.generator.GeneratorRunner</mainClass>
 								</protocPlugin>
 							</protocPlugins>

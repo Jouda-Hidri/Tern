@@ -1,14 +1,35 @@
-# Coroutines, and why not virtual threads
+# Coroutines, and why virtual threads are switched off
 
-**Decision: keep coroutines, run on Java 21.** Migrating deletes a lot of machinery and buys no
-throughput. Worth doing one day for simplicity, never for speed.
+The stack is Spring Boot 3.3, Kotlin 1.9, Java 21 - so virtual threads are one property away.
+`spring.threads.virtual.enabled` is deliberately not set. This is why, measured rather than
+argued.
 
-Coroutines suspend - the task pauses and hands its thread back. Virtual threads keep the thread
-model and make threads cheap. Same goal, one solved in the language, one in the runtime.
+## The property would not reach the code that blocks
+
+Enabling it and looking at which thread runs what:
+
+````
+artic HTTP handler       tomcat-handler-15          <- virtual thread
+antarctic gRPC handler   DefaultDispatcher-worker-8 <- unchanged
+````
+
+It reconfigures Tomcat. It does not reconfigure the gRPC server, whose handlers grpc-kotlin runs
+on `Dispatchers.Default`. **Every `Dispatchers.IO` in this codebase is in antarctic**, so the
+property does not touch a single blocking call:
+
+````
+withContext(Dispatchers.IO) { db.save(...) }              AntarcticService
+withContext(Dispatchers.IO) { db.findWithoutLanguage() }  LanguageBackfill
+withContext(Dispatchers.IO) { jdbc.batchUpdate(...) }     LanguageBackfill
+flowOn(Dispatchers.IO)                                    AntarcticService
+````
+
+Artic gains little either: its controllers are `suspend`, so they already release the servlet
+thread while waiting. The property would change which threads serve HTTP and nothing else.
 
 ## Coroutine capacity for blocking work
 
-Blocking work runs on a dispatcher with a fixed parallelism. `Dispatchers.IO` defaults to **64**.
+Blocking work runs on a dispatcher with fixed parallelism. `Dispatchers.IO` defaults to **64**.
 That number is the capacity: throughput is parallelism divided by how long the call blocks.
 
 Measured with a `Thread.sleep(500)` endpoint at concurrency 500:
@@ -21,14 +42,15 @@ Measured with a `Thread.sleep(500)` endpoint at concurrency 500:
 | 256 | 473 | 512 | 497 |
 | 500 | 930 | 1000 | 724 |
 
-Linear, at ~93% of theoretical, and **each unit of parallelism costs one OS thread**.
+Linear at ~93% of theoretical, and **each unit of parallelism costs one OS thread**. Virtual
+threads reached the same 930 rps with **27** threads.
 
-Virtual threads reached the same 930 rps with **27** threads. So the ceiling is tunable and
-coroutines can match virtual threads on throughput. What they cannot match is the thread cost.
+So the ceiling is tunable and coroutines match virtual threads on throughput. What they cannot
+match is the thread cost.
 
-## Where that becomes fatal
+## Where the thread cost becomes fatal
 
-Ration the threads - `pids_limit: 150` on the container, same 500 concurrent requests:
+Ration the threads - `pids_limit: 150`, same 500 concurrent requests:
 
 | Config | Result |
 | --- | --- |
@@ -36,50 +58,39 @@ Ration the threads - `pids_limit: 150` on the container, same 500 concurrent req
 | Virtual threads | **932 rps, 0 failures**, 27 threads, healthy |
 
 Suspension frees coroutines from the servlet pool, not from the thread a blocked JDBC call sits
-on. Where the thread budget is rationed and blocking concurrency is high, that is the difference
-between serving and falling over.
+on. Where threads are rationed and blocking concurrency is high, that is the difference between
+serving and falling over.
 
 ## Two things that are not the differentiator
 
-**The servlet pool.** With `server.tomcat.threads.max=50`, plain blocking code manages 90 rps.
-Coroutines manage 624 and virtual threads 685 - a `suspend` controller releases the servlet thread
-while it waits, so both escape the pool. Only non-suspending blocking code is capped by it.
+**The servlet pool.** With `server.tomcat.threads.max=50`: plain blocking code manages 90 rps,
+coroutines 624, virtual threads 685. A `suspend` controller releases the servlet thread, so both
+escape it. Only non-suspending blocking code is capped.
 
 **Raw speed.** At `cpu: "1"` and concurrency 60 against the real endpoints, virtual threads
-measured 49 rps against platform threads' 51 on the same build. No difference. A 3x gap against
-the Boot 2.7 build was Spring Boot's cost, not the thread model - visible only by running Boot 3.3
-with virtual threads switched off.
+measured 49 rps against platform threads' 51 on the same build. A 3x gap against the old Boot 2.7
+build was Spring Boot's cost, not the thread model - visible only by running Boot 3.3 with the
+property switched off.
 
-## Why none of it applies to Tern
-
-Every `Dispatchers.IO` here wraps a JDBC call and nothing else. The detector and the gRPC stub
-suspend rather than block, so they hold no thread at all.
+## Why none of it bites here
 
 The database pool is **10 connections**. That is the hard ceiling on concurrent blocking
-operations - the thread budget would have to fall below ~40 before it mattered. Hikari connection
-usage averages ~15ms, so by Little's law you would need ~4,300 rps to have even 64 threads blocked
-at once.
+operations, so the thread budget would have to fall below ~40 before it mattered. Hikari
+connection usage averages ~15ms, so by Little's law you would need ~4,300 rps to have even 64
+threads blocked at once.
 
-## What a migration would cost and delete
+The detector and the gRPC stub suspend rather than block, and hold no thread at all.
 
-Spiked and verified: 54/54 tests on Boot 3.3.5 / Java 21, virtual threads confirmed serving
-(`VirtualThread[#50,tomcat-handler-2] virtual=true`). About thirty minutes.
+## What turning it on would take
 
-Boot 2.7 to 3.3.5, Kotlin 1.7.10 to 1.9.25, Java 11 to 21, `javax` to `jakarta` (7 imports), grpc
-starter 2.13.1 to 3.1.0, `spring.threads.virtual.enabled: true`.
+Not the property on its own. It would need the gRPC server moved onto virtual threads too, and
+then the `Dispatchers.IO` wrappers removed - left in place on a virtual-thread runtime they
+reimpose a 64-wide cap that throttles ~930 rps to ~118. All or nothing per call site.
 
-Three things only surfaced by running it:
-
-- `protoc-gen-grpc-kotlin` dropped its `jdk7` classifier; 1.4.x publishes `jdk8`.
-- Removing the unused JPA starter broke repository discovery - Spring Data JDBC's
-  auto-configuration was arriving through it. `spring-boot-starter-data-jdbc` is the fix.
-- Flyway 10 split database support into modules; without `flyway-database-postgresql` it reports
-  `Unsupported Database: PostgreSQL 14.24`.
-
-It would delete roughly 28 of 33 coroutine constructs, plus `kotlinx-coroutines-reactor`,
-`kotlinx-coroutines-slf4j` and Reactor itself. Two things get worse: **`Flow` has no Java
-counterpart**, so the streaming read path would go back to a materialised list, and **cancellation
-degrades** - `CancellationException` propagates structurally, thread interruption does not.
+That would delete roughly 28 of 33 coroutine constructs, plus `kotlinx-coroutines-reactor` and
+`kotlinx-coroutines-slf4j`. Two things would get worse: **`Flow` has no Java counterpart**, so the
+streaming read path would return to a materialised list, and **cancellation degrades** -
+`CancellationException` propagates structurally, thread interruption does not.
 
 ## An unrelated capacity limit worth knowing
 
@@ -95,6 +106,4 @@ docker compose --profile translate up -d --build
 ./benchmark/load.sh coroutines
 ````
 
-The blocking-endpoint runs above needed a throwaway `GET /slow` and are not in the code. If you
-repeat the Boot 3 comparison, measure the same build with `spring.threads.virtual.enabled=false`
-as well, or you will attribute Spring Boot's cost to virtual threads.
+The blocking-endpoint runs above needed a throwaway `GET /slow` and are not in the code.

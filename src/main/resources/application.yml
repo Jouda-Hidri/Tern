@@ -23,11 +23,6 @@ spring:
     driver-class-name: org.postgresql.Driver
     username: ${POSTGRES_USER} #postgres
     password: ${POSTGRES_PASSWORD} #password
-  jpa:
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-        ddl-auto: none
 management:
   endpoints:
     web:

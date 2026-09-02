@@ -2,7 +2,7 @@
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `CI` (`maven.yml`) | push / PR to main | `mvn verify` on Temurin 17, uploads the surefire reports, then builds the container image to prove a clean checkout is buildable |
+| `CI` (`maven.yml`) | push / PR to main | `mvn verify` on Temurin 21, uploads the surefire reports, then builds the container image to prove a clean checkout is buildable |
 | `CD` (`cd.yml`) | a green `CI` run on main | Publishes to Amazon ECR tagged `latest` and `sha-<commit>`, and writes the `kubectl set image` rollout commands to the run summary |
 | `DORA Lead Time` (`dora.yml`) | PR merged | Measures first-commit-to-merge lead time |
 

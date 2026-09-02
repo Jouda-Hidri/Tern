@@ -26,8 +26,7 @@ connection instead of another REST service in the chain. Both roles run from the
 | `libretranslate` | 5050 | Language detection. Behind a profile, see below |
 
 Three things are documented separately: [Istio, metrics and dashboards](docs/observability.md),
-[CI/CD](docs/ci-cd.md), and [why this uses coroutines rather than virtual
-threads](docs/concurrency.md).
+[CI/CD](docs/ci-cd.md), and [why virtual threads are switched off](docs/concurrency.md).
 
 ## Quick start
 
@@ -218,12 +217,11 @@ Everything is defaulted for Kubernetes and overridden by compose, so neither nee
 mvn verify
 ````
 
-Needs Docker running, and **JDK 11-21** - the Kotlin 1.7.10 compiler cannot parse the version
-string of much newer JDKs and fails outright on 26, which is why CI pins Temurin 17. If `mvn -v`
-reports something newer:
+Needs Docker running and **JDK 21**, which is what CI and the container image both use. If
+`mvn -v` reports something else:
 
 ````
-JAVA_HOME=$(/usr/libexec/java_home -v 17) mvn verify
+JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn verify
 ````
 
 Unit tests cover the gRPC adapter's error translation and the HTTP status mapping.
