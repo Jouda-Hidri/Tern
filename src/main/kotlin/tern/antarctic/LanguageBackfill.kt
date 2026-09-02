@@ -46,7 +46,7 @@ class LanguageBackfill(
             .filter { it.second.isNotEmpty() }
 
         if (detected.isEmpty()) {
-            logger.info("Backfill - $stale.size without a language, detector named none")
+            logger.info("Backfill - ${stale.size} without a language, detector named none")
             return@coroutineScope 0
         }
 

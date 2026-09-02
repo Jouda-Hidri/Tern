@@ -25,8 +25,9 @@ connection instead of another REST service in the chain. Both roles run from the
 | `dbpostgresql` | 5432 | Postgres, schema managed by Flyway |
 | `libretranslate` | 5050 | Language detection. Behind a profile, see below |
 
-Two things are documented separately: [Istio, metrics and dashboards](docs/observability.md) and
-[CI/CD](docs/ci-cd.md).
+Three things are documented separately: [Istio, metrics and dashboards](docs/observability.md),
+[CI/CD](docs/ci-cd.md), and [why this uses coroutines rather than virtual
+threads](docs/concurrency.md).
 
 ## Quick start
 

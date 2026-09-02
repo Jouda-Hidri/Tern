@@ -12,12 +12,26 @@ istioctl install --set profile=demo -y
 kubectl label namespace default istio-injection=enabled
 kubectl rollout restart deployment/artic deployment/antarctic deployment/postgresql
 
-kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/prometheus.yaml
-kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/kiali.yaml
-kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/grafana.yaml
+# match the addons to the Istio you just installed - see the note below
+ISTIO=release-$(istioctl version --remote=false --short | grep -oE '[0-9]+\.[0-9]+' | head -1)
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/$ISTIO/samples/addons/prometheus.yaml
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/$ISTIO/samples/addons/kiali.yaml
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/$ISTIO/samples/addons/grafana.yaml
 
 istioctl dashboard kiali
 ````
+
+The addon version has to track the control plane. Kiali reads istiod's service-registry debug
+endpoint, whose shape changes between releases, so an old Kiali against a new istiod fails with
+`Error fetching Mesh-wide mTLS status` in the UI and, in its log:
+
+````
+Error parsing RegistryEndpoints results:
+json: cannot unmarshal object into Go value of type []*kubernetes.RegistryEndpoint
+````
+
+Prometheus and Grafana are unaffected - they scrape by annotation and never talk to istiod - so
+only Kiali needs replacing if the versions drift apart.
 
 Pods become `2/2` once the sidecar is injected. Istio identifies the hop between the two
 services as gRPC and records it:
