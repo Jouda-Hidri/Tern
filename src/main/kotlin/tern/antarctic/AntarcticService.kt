@@ -4,6 +4,10 @@ import com.google.protobuf.Empty
 import io.grpc.Status
 import io.grpc.StatusException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import net.devh.boot.grpc.server.service.GrpcService
 import org.slf4j.LoggerFactory
@@ -18,20 +22,19 @@ class AntarcticService(
 ) : TernServiceGrpcKt.TernServiceCoroutineImplBase() {
     private val logger = LoggerFactory.getLogger(AntarcticService::class.java)
 
-    override suspend fun getMessage(request: Empty): GetResponse = try {
+    override fun getMessage(request: Empty): Flow<tern.grpc.TernServiceOuterClass.Message> = flow {
         logger.info("Antarctic - Retrieving messages")
-        val messages = withContext(Dispatchers.IO) { db.findMessages() }
-        GetResponse.newBuilder()
-            .addAllMessages(messages.map {
+        db.findMessages().forEach {
+            emit(
                 tern.grpc.TernServiceOuterClass.Message.newBuilder()
                     .setText(it.text)
                     .setLanguage(it.language)
                     .build()
-            })
-            .build()
-    } catch (e: Throwable) {
-        throw e.asStatusException()
+            )
+        }
     }
+        .flowOn(Dispatchers.IO)
+        .catch { throw it.asStatusException() }
 
     override suspend fun saveMessage(request: SaveRequest): SaveResponse = try {
         logger.info("Antarctic - Request messages")

@@ -2,6 +2,9 @@ package tern.artic
 
 import io.grpc.Status
 import io.grpc.StatusException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.slf4j.MDCContext
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -19,7 +22,7 @@ class MessageResource(private val service: ArticService) {
     private val logger = LoggerFactory.getLogger(MessageResource::class.java)
 
     @GetMapping("/")
-    suspend fun find(): List<MessageResponse> = withContext(MDCContext()) {
+    suspend fun find(): Flow<MessageResponse> = withContext(MDCContext()) {
         logger.info("GET / - Retrieving messages")
         service.find().map(MessageResponse::from)
     }
@@ -27,7 +30,7 @@ class MessageResource(private val service: ArticService) {
     @GetMapping("/stats")
     suspend fun stats(): MessageStats = withContext(MDCContext()) {
         logger.info("GET /stats - Summarising messages")
-        MessageStats.of(service.find())
+        MessageStats.of(service.find().toList())
     }
 
     @PostMapping("/")

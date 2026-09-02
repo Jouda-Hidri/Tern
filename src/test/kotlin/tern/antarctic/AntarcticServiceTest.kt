@@ -7,6 +7,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -24,25 +25,25 @@ class AntarcticServiceTest {
     fun `returns every stored message, with its language`() = runTest {
         every { db.findMessages() } returns listOf(Message("an-id", "Hello!", "en"))
 
-        val response = service.getMessage(Empty.getDefaultInstance())
+        val messages = service.getMessage(Empty.getDefaultInstance()).toList()
 
-        assertThat(response.messagesList).hasSize(1)
-        assertThat(response.getMessages(0).text).isEqualTo("Hello!")
-        assertThat(response.getMessages(0).language).isEqualTo("en")
+        assertThat(messages).hasSize(1)
+        assertThat(messages[0].text).isEqualTo("Hello!")
+        assertThat(messages[0].language).isEqualTo("en")
     }
 
     @Test
     fun `a message with no detected language is sent as an empty string`() = runTest {
         every { db.findMessages() } returns listOf(Message("an-id", "Hello!", ""))
 
-        assertThat(service.getMessage(Empty.getDefaultInstance()).getMessages(0).language).isEqualTo("")
+        assertThat(service.getMessage(Empty.getDefaultInstance()).toList()[0].language).isEqualTo("")
     }
 
     @Test
     fun `an empty database is not an error`() = runTest {
         every { db.findMessages() } returns emptyList()
 
-        assertThat(service.getMessage(Empty.getDefaultInstance()).messagesList).isEmpty()
+        assertThat(service.getMessage(Empty.getDefaultInstance()).toList()).isEmpty()
     }
 
     @Test

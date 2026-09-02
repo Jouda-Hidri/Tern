@@ -8,6 +8,9 @@ import io.grpc.Status
 import io.grpc.StatusException
 import io.grpc.inprocess.InProcessChannelBuilder
 import io.grpc.inprocess.InProcessServerBuilder
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -16,7 +19,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import tern.antarctic.Message
 import tern.grpc.TernServiceGrpcKt
-import tern.grpc.TernServiceOuterClass.GetResponse
 import tern.grpc.TernServiceOuterClass.SaveRequest
 import tern.grpc.TernServiceOuterClass.SaveResponse
 import java.time.Duration
@@ -57,7 +59,7 @@ class ArticServiceTest {
             wire("Bonjour!", ""),
         )
 
-        val found = service.find()
+        val found = service.find().toList()
 
         assertThat(found).containsExactly(
             Message(null, "Hello!", "en"),
@@ -125,9 +127,9 @@ class ArticServiceTest {
         var detected: String = ""
         val saved: MutableList<String> = CopyOnWriteArrayList()
 
-        override suspend fun getMessage(request: Empty): GetResponse {
+        override fun getMessage(request: Empty): Flow<tern.grpc.TernServiceOuterClass.Message> = flow {
             failWith?.let { throw it.asRuntimeException() }
-            return GetResponse.newBuilder().addAllMessages(messages).build()
+            messages.forEach { emit(it) }
         }
 
         override suspend fun saveMessage(request: SaveRequest): SaveResponse {

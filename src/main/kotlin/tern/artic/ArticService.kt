@@ -2,6 +2,8 @@ package tern.artic
 
 import com.google.protobuf.Empty
 import io.grpc.ManagedChannel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -22,10 +24,9 @@ class ArticService(
     // Without a deadline an unreachable antarctic is waited on rather than failing.
     private fun stub() = antarctic.withDeadlineAfter(deadline.toMillis(), TimeUnit.MILLISECONDS)
 
-    suspend fun find(): List<Message> {
+    fun find(): Flow<Message> {
         logger.info("Artic - Retrieving messages")
         return stub().getMessage(Empty.getDefaultInstance())
-            .messagesList
             .map { Message(id = null, text = it.text, language = it.language) }
     }
 

@@ -9,10 +9,6 @@ message Message {
   string language = 3;
 }
 
-message GetResponse {
-  repeated Message messages = 1;
-}
-
 message SaveRequest {
   string text = 1;
   reserved 2;
@@ -24,6 +20,6 @@ message SaveResponse {
 }
 
 service TernService {
-  rpc GetMessage (google.protobuf.Empty) returns (GetResponse) {}
+  rpc GetMessage (google.protobuf.Empty) returns (stream Message) {}
   rpc SaveMessage (SaveRequest) returns (SaveResponse);
 }
