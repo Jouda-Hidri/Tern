@@ -53,6 +53,8 @@ spec:
               value: "antarctic"
             - name: TRANSLATE_URL
               value: ""
+            - name: BACKFILL_ENABLED
+              value: "true"
           ports:
             - containerPort: 9090
             - containerPort: 8080   # actuator only; no Service points at it

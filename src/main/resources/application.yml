@@ -10,6 +10,11 @@ tern:
   translate:
     url: ${TRANSLATE_URL:http://libretranslate:5000}
     timeout: ${TRANSLATE_TIMEOUT:1s}
+  backfill:
+    enabled: ${BACKFILL_ENABLED:false}
+    interval-ms: ${BACKFILL_INTERVAL_MS:60000}
+    batch-size: ${BACKFILL_BATCH_SIZE:100}
+    parallelism: ${BACKFILL_PARALLELISM:8}
 spring:
   flyway:
     baselineOnMigrate: true

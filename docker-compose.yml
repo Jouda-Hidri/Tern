@@ -40,6 +40,7 @@ services:
       - SERVICE_NAME=antarctic
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TRANSLATE_URL=${TRANSLATE_URL:-http://libretranslate:5000}
+      - BACKFILL_ENABLED=${BACKFILL_ENABLED:-true}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 5s
