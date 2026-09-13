@@ -161,14 +161,13 @@ curl -s localhost:8080/workflow/runs/<id>           # tool calls, turns, tokens
 one-shot burst of errors against a freshly started container evaluates to zero. It needs errors
 spread across several scrapes - `benchmark/load.sh`, or a loop running a couple of minutes.
 
-**When artic runs locally**, Alertmanager is in a container and `artic` no longer resolves to
-anything it can reach. Either POST the webhook yourself, as above, or point Alertmanager at the
-host and restart it:
-
-````
-sed -i '' 's|http://artic:8080|http://host.docker.internal:8080|' deployment/workflow/alertmanager.yml
-docker compose restart alertmanager
-````
+Alertmanager posts to `host.docker.internal:8080` rather than to `artic:8080`, so the same config
+works whether artic is the container or a local process from `run-local.sh`: compose publishes
+8080 on the host, so that address reaches the container, and it reaches a local artic too.
+`artic:8080` would only have worked for the first. On Linux the `extra_hosts` entry in
+docker-compose.yml is what makes that name resolve; Docker Desktop provides it already. The
+Kubernetes manifests are unaffected - there, Alertmanager and artic are both in the cluster and
+it uses the service name.
 
 ## On Kubernetes
 

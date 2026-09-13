@@ -126,6 +126,10 @@ services:
   alertmanager:
     image: prom/alertmanager:v0.27.0
     profiles: [ "workflow" ]
+    # Docker Desktop resolves host.docker.internal on its own; this is what makes the same
+    # alertmanager.yml work on Linux, where it is not a magic name.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${ALERTMANAGER_PORT:-9093}:9093"
     volumes:
