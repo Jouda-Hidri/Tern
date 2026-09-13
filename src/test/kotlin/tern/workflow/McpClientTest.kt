@@ -123,6 +123,18 @@ class McpClientTest {
     }
 
     @Test
+    fun `follows the redirect servers use to add a trailing slash`() {
+        server.enqueue(
+            MockResponse().setResponseCode(307).setHeader("Location", server.url("/mcp/").toString()),
+        )
+        server.enqueue(initialised())
+        server.enqueue(MockResponse().setResponseCode(202))
+        server.enqueue(json("""{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"get_logs","inputSchema":{}}]}}"""))
+
+        assertThat(client().listTools().map { it.name }).containsExactly("get_logs")
+    }
+
+    @Test
     fun `an unreachable server fails rather than hanging`() {
         server.enqueue(MockResponse().setHeadersDelay(2, java.util.concurrent.TimeUnit.SECONDS))
 

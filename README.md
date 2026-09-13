@@ -188,8 +188,9 @@ clears once antarctic finishes starting.
 ## Investigating an alert
 
 Off by default. With it on, an alert webhook lands on `POST /workflow/alerts` and the service
-investigates it with Claude through MCP servers reading Prometheus, Grafana and the Kubernetes
-API, then answers a report at `GET /workflow/runs/{id}/report`.
+investigates it with Claude through MCP servers reading Prometheus, the container runtime and -
+where configured - Grafana and the Kubernetes API, then answers a report at
+`GET /workflow/runs/{id}/report`.
 
 The webhook comes from Alertmanager, which the profile starts alongside Prometheus - nothing
 external is needed. `WORKFLOW_INVESTIGATOR` picks how it reaches Claude:

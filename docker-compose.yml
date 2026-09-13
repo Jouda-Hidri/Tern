@@ -26,6 +26,7 @@ services:
       - WORKFLOW_INVESTIGATOR=${WORKFLOW_INVESTIGATOR:-api}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - PROMETHEUS_MCP_URL=${PROMETHEUS_MCP_URL:-http://prometheus-mcp:8000/mcp}
+      - DOCKER_MCP_URL=${DOCKER_MCP_URL:-http://docker-mcp:8000/mcp}
       - GRAFANA_MCP_URL=${GRAFANA_MCP_URL:-}
       - KUBERNETES_MCP_URL=${KUBERNETES_MCP_URL:-}
       - WORKFLOW_WEBHOOK_SECRET=${WORKFLOW_WEBHOOK_SECRET:-}
@@ -166,6 +167,32 @@ services:
     volumes:
       - ./deployment/workflow/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
       - grafana-data:/var/lib/grafana
+
+  docker-socket-proxy:
+    # The Docker socket is root on the host: anything holding it can start a privileged container
+    # and own the machine. Mounting it `:ro` does not help - the socket is an API endpoint, and a
+    # read-only bind mount does not stop write calls through it. This proxy is what actually makes
+    # it read-only, by allowing GET on the container endpoints and refusing everything else, so a
+    # bug or an injected instruction in the investigation cannot reach a mutating API at all.
+    image: tecnativa/docker-socket-proxy:0.3.0
+    profiles: [ "workflow" ]
+    environment:
+      - CONTAINERS=1
+      - POST=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  docker-mcp:
+    # Answers what Prometheus cannot: why a container went away, and what it said on the way out.
+    image: codeberg.org/jhot/docker-mcp:latest
+    profiles: [ "workflow" ]
+    ports:
+      - "${DOCKER_MCP_PORT:-8002}:8000"
+    environment:
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+    depends_on:
+      - docker-socket-proxy
 
   grafana-mcp:
     # Needs a Grafana service account token; without one, leave GRAFANA_MCP_URL unset and the

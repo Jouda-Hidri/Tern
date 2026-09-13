@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
+import org.springframework.http.client.reactive.ReactorClientHttpConnector
 import org.springframework.web.reactive.function.client.WebClient
+import reactor.netty.http.client.HttpClient
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -28,7 +30,15 @@ class McpClient(
     webClientBuilder: WebClient.Builder,
 ) {
     private val logger = LoggerFactory.getLogger(McpClient::class.java)
-    private val client = webClientBuilder.baseUrl(properties.url).build()
+
+    // Cloned, so one server's base url cannot leak into the next client built from the same
+    // builder. Redirects are followed because servers routinely answer /mcp with a 307 to /mcp/,
+    // and an unfollowed redirect is a 200-shaped empty body - a server that looks like it has no
+    // tools rather than one that failed.
+    private val client = webClientBuilder.clone()
+        .clientConnector(ReactorClientHttpConnector(HttpClient.create().followRedirect(true)))
+        .baseUrl(properties.url)
+        .build()
     private val session = AtomicReference<String>("")
     private val initialised = AtomicReference(false)
     private val nextId = AtomicLong(1)

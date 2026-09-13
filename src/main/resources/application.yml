@@ -37,6 +37,9 @@ tern:
     mcp:
       prometheus:
         url: ${PROMETHEUS_MCP_URL:}
+      docker:
+        url: ${DOCKER_MCP_URL:}
+        token: ${DOCKER_MCP_TOKEN:}
       grafana:
         url: ${GRAFANA_MCP_URL:}
       kubernetes:

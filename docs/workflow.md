@@ -1,8 +1,8 @@
 # Alert investigation workflow
 
 An alert fires, a webhook lands on artic, and the service investigates it with Claude through
-MCP servers that read Prometheus, Grafana and the Kubernetes API. What comes back is a markdown
-report at `GET /workflow/runs/{id}/report`.
+MCP servers that read Prometheus, the container runtime, Grafana and the Kubernetes API. What
+comes back is a markdown report at `GET /workflow/runs/{id}/report`.
 
 ````
 Prometheus ──rule fires──▶ Alertmanager ──webhook──▶ artic  POST /workflow/alerts
@@ -10,10 +10,12 @@ Prometheus ──rule fires──▶ Alertmanager ──webhook──▶ artic  
                                                                  ▼
                                                     InvestigationRunner (2 at a time)
                                                                  │
-                                        ┌────────────────────────┼─────────────────────┐
-                                        ▼                        ▼                     ▼
-                                  prometheus-mcp            grafana-mcp          kubernetes-mcp
-                                        └────────────────────────┴─────────────────────┘
+                        ┌───────────────┬───────────────┼───────────────┐
+                        ▼               ▼               ▼               ▼
+                  prometheus-mcp    docker-mcp     grafana-mcp    kubernetes-mcp
+                                   (socket proxy,                 (read-only RBAC)
+                                    GET only)
+                        └───────────────┴───────────────┴───────────────┘
                                                      tools/list, tools/call
                                                                  │
                                                     Claude (claude-opus-5) tool loop
@@ -230,7 +232,7 @@ rather than answering `202` to alerts it can never investigate.
 | `WORKFLOW_INVESTIGATOR` | `api` | `api`, `cli` or `dry-run` - see above |
 | `WORKFLOW_CLI_COMMAND` | `claude` | Which binary `cli` shells out to |
 | `ANTHROPIC_API_KEY` | - | Read by the SDK from the environment. Required for `api`, unused by the other two |
-| `PROMETHEUS_MCP_URL` / `GRAFANA_MCP_URL` / `KUBERNETES_MCP_URL` | - | MCP endpoints. Blank means "not configured"; at least one must be set |
+| `PROMETHEUS_MCP_URL` / `DOCKER_MCP_URL` / `GRAFANA_MCP_URL` / `KUBERNETES_MCP_URL` | - | MCP endpoints. Blank means "not configured"; at least one must be set. Compose defaults the first two |
 | `WORKFLOW_WEBHOOK_SECRET` | - | HMAC-SHA256 secret. **Blank disables verification** - only acceptable when the endpoint is unreachable from outside the cluster, which is the case for Alertmanager, since it cannot sign |
 | `WORKFLOW_SIGNATURE_HEADER` | `X-Tern-Signature` | `X-Incident-Signature` for incident.io |
 | `WORKFLOW_MODEL` | `claude-opus-5` | |
@@ -259,8 +261,24 @@ is logged in. A flapping rule is a bill. `WORKFLOW_CONCURRENCY` and
 `group_interval` bound how often the same alert arrives. Set `max_alerts` on the webhook receiver
 so a storm does not arrive as one enormous payload.
 
+**Which tools it has decides what it can conclude.** Prometheus says a target stopped answering;
+it cannot say whether the container is gone, what it logged on the way out, or what exit code it
+returned. That is why the compose profile also runs a Docker MCP server, and why the Kubernetes
+manifests run one against the API. When a report says it could not determine something because no
+tool existed, that is not the model being unhelpful - it is a list of what to connect next. Read
+those lines as a backlog.
+
+**The Docker socket is root on the host.** Anything holding it can start a privileged container
+and own the machine, and mounting it `:ro` does not help: the socket is an API endpoint, and a
+read-only bind mount does not stop write calls through it. The MCP server therefore never sees
+it. `docker-socket-proxy` holds the socket and exposes a TCP endpoint that allows GET on the
+container endpoints and answers 403 to everything else, which was checked by asking it to create
+and to kill a container. It is the same principle as the read-only ClusterRole: make the mutating
+call unreachable rather than merely unasked-for.
+
 **Image tags drift.** The MCP servers here are third-party images pinned to `latest`
-(`ghcr.io/pab1it0/prometheus-mcp-server`, `mcp/grafana`, `ghcr.io/containers/kubernetes-mcp-server`).
+(`ghcr.io/pab1it0/prometheus-mcp-server`, `codeberg.org/jhot/docker-mcp`, `mcp/grafana`,
+`ghcr.io/containers/kubernetes-mcp-server`).
 Their flags and transport names change between releases. If a server never appears in
 `Workflow - MCP servers:` or `tools/list` fails, check its own README for the current
 streamable-HTTP flag before suspecting this code. Pin the digests before you rely on any of it.
