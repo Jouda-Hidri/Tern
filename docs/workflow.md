@@ -101,7 +101,7 @@ WORKFLOW_ENABLED=true docker compose --profile workflow up -d --build
 ````
 
 Compose reads `.env` on its own, and it is gitignored. Add `PROMETHEUS_PORT` / `GRAFANA_PORT` /
-`ALERTMANAGER_PORT` there too if another stack already owns 9091, 3000 or 9093 - they are host
+`ALERTMANAGER_PORT` / `DOCKER_MCP_PORT` there too if another stack owns 9091, 3000, 9093 or 8002 - they are host
 ports only, and the services find each other by name regardless.
 
 ## Triggering an alert

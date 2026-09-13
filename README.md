@@ -187,54 +187,73 @@ clears once antarctic finishes starting.
 
 ## Investigating an alert
 
-Off by default. With it on, an alert webhook lands on `POST /workflow/alerts` and the service
-investigates it with Claude through MCP servers reading Prometheus, the container runtime and -
-where configured - Grafana and the Kubernetes API, then answers a report at
-`GET /workflow/runs/{id}/report`.
+Off by default. An alert webhook lands on `POST /workflow/alerts`, the service investigates it
+with Claude through read-only MCP servers, and answers a report at `GET /workflow/runs/{id}/report`.
+The `workflow` profile starts everything needed: Prometheus, Alertmanager, Grafana, and MCP
+servers for Prometheus and for Docker. Nothing external is involved.
 
-The webhook comes from Alertmanager, which the profile starts alongside Prometheus - nothing
-external is needed. `WORKFLOW_INVESTIGATOR` picks how it reaches Claude:
+**1. Choose how it reaches Claude.**
 
-| | Credential | |
+| `WORKFLOW_INVESTIGATOR` | Credential | |
 | --- | --- | --- |
-| `dry-run` | none | the whole chain except the model. Start here |
-| `cli` | none | your own Claude Code session. Runs on your machine, not in the container |
-| `api` | `ANTHROPIC_API_KEY` | the real thing, and the only one fit for production |
+| `dry-run` | none | every step except the model. Start here |
+| `cli` | none | the Claude Code session you are logged into, on your machine |
+| `api` | `ANTHROPIC_API_KEY` in `.env` | the only one fit for production |
 
-Pick one and start it:
+**2. Start it.**
 
 ````
-# no model, nothing to pay, every other part real
+# dry-run, in the container
 WORKFLOW_ENABLED=true WORKFLOW_INVESTIGATOR=dry-run docker compose --profile workflow up -d --build
 
-# or a real investigation, through the Claude session you are already logged into.
-# Runs in the foreground - leave it there and use a second terminal for the rest.
+# api, in the container
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
+WORKFLOW_ENABLED=true docker compose --profile workflow up -d --build
+
+# cli, on your machine. Runs in the foreground - use a second terminal for step 3 on.
 ./run-local.sh
 ````
 
-Then break something and read what comes back:
+**3. Check it loaded.** Nothing downstream works without this line:
 
 ````
-docker compose stop antarctic                      # no traffic needed; the run appears ~85s later
-curl -s localhost:8080/workflow/runs               # the run Alertmanager queued
-curl -s localhost:8080/workflow/runs/<id>/report   # the report
-docker compose start antarctic                     # or it re-fires, and pays for a run, every hour
+docker compose logs artic | grep "Workflow - MCP servers"    # -> prometheus, docker
 ````
 
-Stopping antarctic is what makes Prometheus miss a scrape, which is what fires `TernTargetDown`.
-Skip the wait by being the webhook yourself - identical path from `AlertParser` onwards:
+**4. Trigger an alert.** Break something and wait ~85s - stopping antarctic makes Prometheus miss
+a scrape, which is what fires `TernTargetDown`:
+
+````
+docker compose stop antarctic
+````
+
+Or post one yourself. No waiting, and identical from `AlertParser` onwards:
 
 ````
 curl -X POST localhost:8080/workflow/alerts -H 'Content-Type: application/json' \
   -d '{"title":"antarctic is unreachable","severity":"critical","labels":{"role":"antarctic"}}'
 ````
 
-Every run costs tokens, `cli` included. Artic refuses to start if `api` is selected without a key,
-rather than accepting alerts it cannot investigate.
+**5. Read the report.**
 
-incident.io cannot run here - it is SaaS only - but it can be the source of the webhook or the
-place the report is sent. That, the Kubernetes manifests and the read-only credentials this needs
-are in [docs/workflow.md](docs/workflow.md).
+````
+curl -s localhost:8080/workflow/runs               # QUEUED -> RUNNING -> SUCCEEDED, and the id
+curl -s localhost:8080/workflow/runs/<id>/report   # the markdown
+curl -s localhost:8080/workflow/runs/<id>          # tools called, turns, tokens
+````
+
+**6. Put it back**, or the alert re-fires and pays for another run every hour:
+
+````
+docker compose start antarctic
+````
+
+Every run costs tokens, `cli` included. Artic refuses to start if `api` has no key, rather than
+accepting alerts it cannot investigate.
+
+incident.io cannot run here - it is SaaS only - but it can send the webhook or receive the report.
+That, the Kubernetes manifests, and the read-only credentials this needs are in
+[docs/workflow.md](docs/workflow.md).
 
 ## Health and metrics
 
