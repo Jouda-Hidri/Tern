@@ -195,13 +195,14 @@ The webhook comes from Alertmanager, which the profile starts alongside Promethe
 external is needed.
 
 ````
-echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env      # add PROMETHEUS_PORT / GRAFANA_PORT if 9091 or 3000 are taken
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env        # and PROMETHEUS_PORT / GRAFANA_PORT if taken
 WORKFLOW_ENABLED=true docker compose --profile workflow up -d --build
 
-docker compose stop antarctic                     # TernTargetDown fires ~75s later, no traffic needed
+docker compose stop antarctic                      # TernTargetDown fires ~75s later, no traffic needed
+curl -s localhost:8080/workflow/runs               # the run Alertmanager queued
+curl -s localhost:8080/workflow/runs/<id>/report   # the report
 
-curl -s localhost:8080/workflow/runs              # the run Alertmanager queued
-curl -s localhost:8080/workflow/runs/<id>/report  # the report
+docker compose start antarctic                     # or it re-fires, and pays for a run, every hour
 ````
 
 Every run costs tokens. Artic refuses to start if the module is on without a key or an MCP server,
