@@ -170,7 +170,10 @@ services:
     image: tecnativa/docker-socket-proxy:0.3.0
     profiles: [ "workflow" ]
     environment:
+      # IMAGES too: list_containers and get_container resolve each container's image, so with
+      # CONTAINERS alone they 403 and only get_logs works. POST=0 is what keeps it read-only.
       - CONTAINERS=1
+      - IMAGES=1
       - POST=0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

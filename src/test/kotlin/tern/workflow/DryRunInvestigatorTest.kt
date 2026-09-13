@@ -78,7 +78,7 @@ class DryRunInvestigatorTest {
             .contains("No model was called")
             .contains("TernTargetDown")
             .contains("`execute_query` - Run an instant PromQL query")
-            .contains("WORKFLOW_INVESTIGATOR=api")
+            .contains("WORKFLOW_INVESTIGATOR=cli")
     }
 
     @Test

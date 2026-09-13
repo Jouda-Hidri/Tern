@@ -29,7 +29,7 @@ class DryRunInvestigator(private val clients: List<McpClient>) : Investigator {
         appendLine("Dry run. The alert arrived and the MCP servers answered. No model was called.")
         appendLine()
         appendLine("## Impact")
-        appendLine("None. `tern.workflow.dry-run` is on, so nothing was sent to Claude and nothing was charged.")
+        appendLine("None. No model was called and nothing was charged.")
         appendLine()
         appendLine("## Evidence")
         appendLine("The alert, as the investigator would have seen it:")
@@ -54,10 +54,7 @@ class DryRunInvestigator(private val clients: List<McpClient>) : Investigator {
         appendLine("Not determined. A dry run checks that an alert can reach the tools, not what the alert means.")
         appendLine()
         appendLine("## Next steps")
-        appendLine(
-            "Set `WORKFLOW_INVESTIGATOR=api` with a key, or `cli` to use the Claude session on your " +
-                "machine, to have this alert actually investigated.",
-        )
+        appendLine("Run with `WORKFLOW_INVESTIGATOR=cli` to have this alert actually investigated.")
         appendLine()
         appendLine("## Confidence")
         append("n/a - nothing was investigated.")
