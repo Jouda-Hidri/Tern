@@ -25,8 +25,9 @@ connection instead of another REST service in the chain. Both roles run from the
 | `dbpostgresql` | 5432 | Postgres, schema managed by Flyway |
 | `libretranslate` | 5050 | Language detection. Behind a profile, see below |
 
-Three things are documented separately: [Istio, metrics and dashboards](docs/observability.md),
-[CI/CD](docs/ci-cd.md), and [why virtual threads are switched off](docs/concurrency.md).
+Four things are documented separately: [Istio, metrics and dashboards](docs/observability.md),
+[the alert investigation workflow](docs/workflow.md), [CI/CD](docs/ci-cd.md), and
+[why virtual threads are switched off](docs/concurrency.md).
 
 ## Quick start
 
@@ -183,6 +184,30 @@ would pull it out of the load balancer too - turning one outage into two.
 
 After antarctic returns, the next request or two may still fail while gRPC backs off; it
 clears once antarctic finishes starting.
+
+## Investigating an alert
+
+Off by default. With it on, an alert webhook lands on `POST /workflow/alerts` and the service
+investigates it with Claude through MCP servers reading Prometheus, Grafana and the Kubernetes
+API, then answers a report at `GET /workflow/runs/{id}/report`.
+
+The webhook comes from Alertmanager, which the profile starts alongside Prometheus - nothing
+external is needed.
+
+````
+export ANTHROPIC_API_KEY=sk-ant-...
+WORKFLOW_ENABLED=true docker compose --profile workflow up -d --build
+
+docker compose stop antarctic           # break something
+curl -s -o /dev/null localhost:8080/    # give the rule something to see
+
+curl -s localhost:8080/workflow/runs                # a minute later, the run it queued
+curl -s localhost:8080/workflow/runs/<id>/report
+````
+
+incident.io cannot run here - it is SaaS only - but it can be the source of the webhook or the
+place the report is sent. That, the Kubernetes manifests, the cost and the read-only credentials
+this needs are in [docs/workflow.md](docs/workflow.md).
 
 ## Health and metrics
 

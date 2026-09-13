@@ -19,6 +19,16 @@ services:
       - SERVICE_NAME=artic
       # LOG_LEVEL=DEBUG turns the one-line-per-entry default into the full hop-by-hop trace
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # The alert-investigation workflow. Off unless the `workflow` profile is up, because it
+      # needs the MCP servers that profile starts. See docs/workflow.md.
+      - WORKFLOW_ENABLED=${WORKFLOW_ENABLED:-false}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - PROMETHEUS_MCP_URL=${PROMETHEUS_MCP_URL:-http://prometheus-mcp:8000/mcp}
+      - GRAFANA_MCP_URL=${GRAFANA_MCP_URL:-}
+      - KUBERNETES_MCP_URL=${KUBERNETES_MCP_URL:-}
+      - WORKFLOW_WEBHOOK_SECRET=${WORKFLOW_WEBHOOK_SECRET:-}
+      - WORKFLOW_SINK_URL=${WORKFLOW_SINK_URL:-}
+      - WORKFLOW_SINK_TOKEN=${WORKFLOW_SINK_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 5s
@@ -90,6 +100,81 @@ services:
       retries: 30
       start_period: 180s
 
+  # Everything below is the `workflow` profile: the alert source, and the MCP servers the
+  # investigation reads through. incident.io is not here and cannot be - it is SaaS only.
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: [ "workflow" ]
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./deployment/workflow/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deployment/workflow/rules.yml:/etc/prometheus/rules.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-lifecycle
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    profiles: [ "workflow" ]
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./deployment/workflow/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  prometheus-mcp:
+    # Reads Prometheus over its HTTP API and exposes query/range-query/label tools over MCP.
+    image: ghcr.io/pab1it0/prometheus-mcp-server:latest
+    profiles: [ "workflow" ]
+    ports:
+      - "8000:8000"
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+      - PROMETHEUS_MCP_SERVER_TRANSPORT=http
+      - PROMETHEUS_MCP_BIND_HOST=0.0.0.0
+      - PROMETHEUS_MCP_BIND_PORT=8000
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: [ "workflow" ]
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+    volumes:
+      - ./deployment/workflow/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - grafana-data:/var/lib/grafana
+
+  grafana-mcp:
+    # Needs a Grafana service account token; without one, leave GRAFANA_MCP_URL unset and the
+    # investigation runs on the Prometheus MCP server alone.
+    image: mcp/grafana:latest
+    profiles: [ "workflow" ]
+    ports:
+      - "8001:8000"
+    environment:
+      - GRAFANA_URL=http://grafana:3000
+      - GRAFANA_SERVICE_ACCOUNT_TOKEN=${GRAFANA_TOKEN:-}
+      - GRAFANA_API_KEY=${GRAFANA_TOKEN:-}
+    command: ["-t", "streamable-http", "--address", "0.0.0.0:8000"]
+    depends_on:
+      - grafana
+
 volumes:
   postgres-data:
   libretranslate-models:
+  grafana-data:

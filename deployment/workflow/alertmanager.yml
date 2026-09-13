@@ -1,0 +1,16 @@
+route:
+  receiver: tern-workflow
+  group_by: [alertname, service]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 1h
+
+receivers:
+  - name: tern-workflow
+    webhook_configs:
+      # Alertmanager cannot sign its webhooks, so leave WORKFLOW_WEBHOOK_SECRET unset when this
+      # is the only sender and keep the endpoint off the public internet. incident.io does sign,
+      # which is what the secret and X-Incident-Signature header are for.
+      - url: http://artic:8080/workflow/alerts
+        send_resolved: false
+        max_alerts: 5
