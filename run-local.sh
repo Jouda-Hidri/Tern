@@ -12,6 +12,13 @@ cd "$(dirname "$0")"
 command -v "${WORKFLOW_CLI_COMMAND:-claude}" >/dev/null \
   || { echo "No '${WORKFLOW_CLI_COMMAND:-claude}' on PATH. Install Claude Code, or set WORKFLOW_INVESTIGATOR=api"; exit 1; }
 
+# The same JDK 21 the build needs. The Kotlin 1.9 compiler cannot parse a Java 26 version string,
+# and a newer JDK is what `mvn` picks up here by default.
+if [ -z "${JAVA_HOME:-}" ] && [ -x /usr/libexec/java_home ]; then
+  JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+  export JAVA_HOME
+fi
+
 docker compose --profile workflow up -d
 # Frees 8080, which the local process is about to take.
 docker compose stop artic
