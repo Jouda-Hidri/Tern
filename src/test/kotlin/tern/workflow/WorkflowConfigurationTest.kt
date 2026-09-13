@@ -4,6 +4,7 @@ import com.anthropic.client.AnthropicClient
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.boot.autoconfigure.AutoConfigurations
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration
@@ -38,6 +39,19 @@ class WorkflowConfigurationTest {
                         "turn the module off",
                 )
         }
+    }
+
+    @Test
+    fun `refuses to start without a credential, rather than failing every alert on a 401`() {
+        assertThatThrownBy { requireAnthropicCredential { null } }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN")
+
+        assertThatThrownBy { requireAnthropicCredential { "" } }
+            .isInstanceOf(IllegalStateException::class.java)
+
+        requireAnthropicCredential { name -> "set".takeIf { name == "ANTHROPIC_AUTH_TOKEN" } }
+        requireAnthropicCredential { name -> "set".takeIf { name == "ANTHROPIC_API_KEY" } }
     }
 
     @Test

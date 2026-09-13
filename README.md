@@ -195,19 +195,22 @@ The webhook comes from Alertmanager, which the profile starts alongside Promethe
 external is needed.
 
 ````
-export ANTHROPIC_API_KEY=sk-ant-...
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env      # add PROMETHEUS_PORT / GRAFANA_PORT if 9091 or 3000 are taken
 WORKFLOW_ENABLED=true docker compose --profile workflow up -d --build
 
-docker compose stop antarctic           # break something
-curl -s -o /dev/null localhost:8080/    # give the rule something to see
+docker compose stop antarctic                   # break something
+curl -s -o /dev/null localhost:8080/            # give the rule something to see
 
-curl -s localhost:8080/workflow/runs                # a minute later, the run it queued
-curl -s localhost:8080/workflow/runs/<id>/report
+curl -s localhost:8080/workflow/runs              # a minute later: the run it queued
+curl -s localhost:8080/workflow/runs/<id>/report  # the report
 ````
 
+Every run costs tokens. Artic refuses to start if the module is on without a key or an MCP server,
+rather than accepting alerts it cannot investigate.
+
 incident.io cannot run here - it is SaaS only - but it can be the source of the webhook or the
-place the report is sent. That, the Kubernetes manifests, the cost and the read-only credentials
-this needs are in [docs/workflow.md](docs/workflow.md).
+place the report is sent. That, the Kubernetes manifests and the read-only credentials this needs
+are in [docs/workflow.md](docs/workflow.md).
 
 ## Health and metrics
 

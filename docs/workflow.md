@@ -45,9 +45,13 @@ the same `AlertContext`.
 ## Quick start on docker-compose
 
 ````
-export ANTHROPIC_API_KEY=sk-ant-...
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
 WORKFLOW_ENABLED=true docker compose --profile workflow up -d --build
 ````
+
+Compose reads `.env` on its own, and it is gitignored. Add `PROMETHEUS_PORT` / `GRAFANA_PORT` /
+`ALERTMANAGER_PORT` there too if another stack already owns 9091, 3000 or 9093 - they are host
+ports only, and the services find each other by name regardless.
 
 That starts Prometheus (scraping both roles), Alertmanager (webhooking artic), Grafana, and the
 Prometheus MCP server. Then make something break:

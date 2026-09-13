@@ -106,7 +106,9 @@ services:
     image: prom/prometheus:v2.54.1
     profiles: [ "workflow" ]
     ports:
-      - "9091:9090"
+      # Host ports only, for you to look at. The services find each other by name on the compose
+      # network, so overriding these when another stack already owns 9091 or 3000 changes nothing.
+      - "${PROMETHEUS_PORT:-9091}:9090"
     volumes:
       - ./deployment/workflow/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deployment/workflow/rules.yml:/etc/prometheus/rules.yml:ro
@@ -123,7 +125,7 @@ services:
     image: prom/alertmanager:v0.27.0
     profiles: [ "workflow" ]
     ports:
-      - "9093:9093"
+      - "${ALERTMANAGER_PORT:-9093}:9093"
     volumes:
       - ./deployment/workflow/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     healthcheck:
@@ -151,7 +153,7 @@ services:
     image: grafana/grafana:11.2.0
     profiles: [ "workflow" ]
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3000}:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_AUTH_ANONYMOUS_ENABLED=true

@@ -11,6 +11,16 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.web.reactive.function.client.WebClient
 
+private val CREDENTIAL_VARIABLES = listOf("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+fun requireAnthropicCredential(env: (String) -> String?) {
+    check(CREDENTIAL_VARIABLES.any { !env(it).isNullOrBlank() }) {
+        "tern.workflow.enabled is true but none of ${CREDENTIAL_VARIABLES.joinToString(" or ")} is " +
+            "set. The SDK does not notice until its first call, so without this the service would " +
+            "start healthy, accept alerts, and fail each one on a 401 a minute later"
+    }
+}
+
 @Configuration
 @EnableConfigurationProperties(WorkflowProperties::class)
 @ConditionalOnProperty(prefix = "tern.workflow", name = ["enabled"], havingValue = "true")
@@ -25,7 +35,10 @@ class WorkflowConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    fun anthropicClient(): AnthropicClient = AnthropicOkHttpClient.fromEnv()
+    fun anthropicClient(): AnthropicClient {
+        requireAnthropicCredential(System::getenv)
+        return AnthropicOkHttpClient.fromEnv()
+    }
 
     @Bean
     fun mcpClients(
