@@ -22,6 +22,8 @@ services:
       # The alert-investigation workflow. Off unless the `workflow` profile is up, because it
       # needs the MCP servers that profile starts. See docs/workflow.md.
       - WORKFLOW_ENABLED=${WORKFLOW_ENABLED:-false}
+      # `cli` is not available in here: it needs the Claude Code session on your machine.
+      - WORKFLOW_INVESTIGATOR=${WORKFLOW_INVESTIGATOR:-api}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - PROMETHEUS_MCP_URL=${PROMETHEUS_MCP_URL:-http://prometheus-mcp:8000/mcp}
       - GRAFANA_MCP_URL=${GRAFANA_MCP_URL:-}

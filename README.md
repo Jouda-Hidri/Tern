@@ -192,20 +192,32 @@ investigates it with Claude through MCP servers reading Prometheus, Grafana and 
 API, then answers a report at `GET /workflow/runs/{id}/report`.
 
 The webhook comes from Alertmanager, which the profile starts alongside Prometheus - nothing
-external is needed.
+external is needed. `WORKFLOW_INVESTIGATOR` picks how it reaches Claude:
+
+| | Credential | |
+| --- | --- | --- |
+| `dry-run` | none | the whole chain except the model. Start here |
+| `cli` | none | your own Claude Code session. Runs on your machine, not in the container |
+| `api` | `ANTHROPIC_API_KEY` | the real thing, and the only one fit for production |
 
 ````
-echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env        # and PROMETHEUS_PORT / GRAFANA_PORT if taken
-WORKFLOW_ENABLED=true docker compose --profile workflow up -d --build
+WORKFLOW_ENABLED=true WORKFLOW_INVESTIGATOR=dry-run docker compose --profile workflow up -d --build
+./run-local.sh                                     # or: your Claude session, on your machine
+````
 
+Then break something and read what comes back:
+
+````
 docker compose stop antarctic                      # TernTargetDown fires ~75s later, no traffic needed
 curl -s localhost:8080/workflow/runs               # the run Alertmanager queued
 curl -s localhost:8080/workflow/runs/<id>/report   # the report
-
 docker compose start antarctic                     # or it re-fires, and pays for a run, every hour
 ````
 
-Every run costs tokens. Artic refuses to start if the module is on without a key or an MCP server,
+Stopping antarctic is what makes Prometheus miss a scrape, which is what fires the rule. To skip
+the wait, POST an alert to `/workflow/alerts` yourself - same path from there on.
+
+Every run costs tokens, `cli` included. Artic refuses to start if `api` is selected without a key,
 rather than accepting alerts it cannot investigate.
 
 incident.io cannot run here - it is SaaS only - but it can be the source of the webhook or the

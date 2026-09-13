@@ -42,7 +42,56 @@ profile. That is what the quick start below uses, and the code path is identical
 handler normalises Alertmanager, incident.io and a generic `{title, severity, labels}` shape into
 the same `AlertContext`.
 
-## Quick start on docker-compose
+## Three ways to reach Claude
+
+`WORKFLOW_INVESTIGATOR` picks which one. They all take the same `AlertContext` and return the same
+`Investigation`, so everything either side of them is identical.
+
+| Value | Where it runs | Credential | Use it for |
+| --- | --- | --- | --- |
+| `api` (default) | anywhere, including a container | `ANTHROPIC_API_KEY` | anything real |
+| `cli` | only on a machine with Claude Code logged in | none - the session already there | a private project, or trying it before paying for a key |
+| `dry-run` | anywhere | none | proving the plumbing works without calling a model |
+
+The seam is `Investigator` in `Investigator.kt` - two methods' worth of interface. `ApiInvestigator`
+drives the tool loop itself against the Messages API. `CliInvestigator` hands the whole job to
+`claude --print`, which already speaks MCP, and reads the report out of its JSON. `DryRunInvestigator`
+asks the MCP servers what tools they have and reports that. Adding a fourth means one class and one
+`@Bean`.
+
+## Quick start: no key, no model
+
+The fastest way to see the whole chain work:
+
+````
+WORKFLOW_ENABLED=true WORKFLOW_INVESTIGATOR=dry-run docker compose --profile workflow up -d --build
+````
+
+Prometheus fires, Alertmanager posts, the webhook is verified and parsed, the run is queued, and
+the MCP servers are asked what tools they have. The report lists what was found instead of
+investigating it. It is the fastest way to tell a broken deployment from a broken prompt.
+
+## Quick start: your own Claude session, no key
+
+`claude` authenticates as you, on your machine, so this one cannot run in the container. The
+script stops the containerised artic and runs it locally in its place, against the rest of the
+stack over published ports:
+
+````
+./run-local.sh
+````
+
+**This is not how you would do it in production.** A CLI session belongs to a person: it cannot be
+rotated, scoped to a service, or handed to a deployment, and every investigation is billed to
+whoever is logged in. It is here because this is a private project and it removes the only thing
+standing between you and a working demo. For anything real, use `api`.
+
+One consequence worth knowing: the alert text ends up in a prompt on your machine, and Claude Code
+has tools that can act on it. `CliInvestigator` passes `--disallowed-tools Bash Write Edit
+NotebookEdit WebFetch WebSearch` and `--strict-mcp-config`, so the session can reach the MCP servers
+it was given and nothing else.
+
+## Quick start: an API key
 
 ````
 echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
@@ -53,41 +102,73 @@ Compose reads `.env` on its own, and it is gitignored. Add `PROMETHEUS_PORT` / `
 `ALERTMANAGER_PORT` there too if another stack already owns 9091, 3000 or 9093 - they are host
 ports only, and the services find each other by name regardless.
 
-That starts Prometheus (scraping both roles), Alertmanager (webhooking artic), Grafana, and the
-Prometheus MCP server. Then make something break:
+## Triggering an alert
+
+Two ways, and they enter the service at exactly the same place.
+
+**Stop the thing artic depends on.**
 
 ````
 docker compose stop antarctic
 ````
 
-`TernTargetDown` needs no traffic - Prometheus stops being able to scrape antarctic, the rule
-waits out its `for: 1m`, Alertmanager groups for ten seconds, and the webhook lands about 75
-seconds after the container stops. Watch it:
+Antarctic is the back end that owns the database, so stopping it is the most realistic breakage
+available: artic immediately starts answering 503 and 504, and Prometheus stops being able to
+scrape antarctic at all. It is the second of those that fires the alert. The chain, end to end,
+takes about 75 seconds:
+
+| | |
+| --- | --- |
+| t+0s | the container stops |
+| t+15s | Prometheus misses a scrape, `up{job="tern",role="antarctic"}` goes to 0 |
+| t+15s | `TernTargetDown` goes `pending` - the expression is true but `for: 1m` has not elapsed |
+| t+75s | still true a minute later, so the rule goes `firing` and Prometheus notifies Alertmanager |
+| t+85s | Alertmanager finishes its 10s `group_wait` and POSTs to `/workflow/alerts` |
+
+Watch each stage:
 
 ````
+curl -s localhost:9091/api/v1/rules     # inactive -> pending -> firing
+curl -s localhost:9093/api/v2/alerts    # what Alertmanager is holding
 docker compose logs -f artic | grep Workflow
-curl -s localhost:8080/workflow/runs | python3 -m json.tool
-curl -s localhost:8080/workflow/runs/<id>/report
 ````
 
-`TernArticErrors` is the other obvious one to try, but it will not fire from a handful of curls.
+Put antarctic back when you are done - `repeat_interval` is an hour, so an alert left firing is a
+standing order for one investigation an hour:
+
+````
+docker compose start antarctic
+````
+
+**Or be the webhook yourself.** No waiting, no Prometheus, same code path from `AlertParser`
+onwards:
+
+````
+curl -X POST localhost:8080/workflow/alerts -H 'Content-Type: application/json' \
+  -d '{"title":"antarctic is unreachable","severity":"critical","labels":{"role":"antarctic"}}'
+````
+
+Then read the result:
+
+````
+curl -s localhost:8080/workflow/runs                # find the id
+curl -s localhost:8080/workflow/runs/<id>/report    # the markdown
+curl -s localhost:8080/workflow/runs/<id>           # tool calls, turns, tokens
+````
+
+**`TernArticErrors` is the rule you would expect to use, and it will not fire from a few curls.**
 `rate()` does not count the jump from a series that does not exist yet to its first sample, so a
 one-shot burst of errors against a freshly started container evaluates to zero. It needs errors
-spread across several scrapes - `benchmark/load.sh`, or a loop running for a couple of minutes.
+spread across several scrapes - `benchmark/load.sh`, or a loop running a couple of minutes.
 
-Or skip the alerting stack and POST an alert yourself:
+**When artic runs locally**, Alertmanager is in a container and `artic` no longer resolves to
+anything it can reach. Either POST the webhook yourself, as above, or point Alertmanager at the
+host and restart it:
 
 ````
-curl -i -X POST localhost:8080/workflow/alerts -H 'Content-Type: application/json' -d '{
-  "alerts": [{"status":"firing","labels":{"alertname":"TernArticErrors","severity":"critical"},
-              "annotations":{"description":"artic is answering 503 on every path"},
-              "startsAt":"2026-09-11T10:00:00Z"}]}'
+sed -i '' 's|http://artic:8080|http://host.docker.internal:8080|' deployment/workflow/alertmanager.yml
+docker compose restart alertmanager
 ````
-
-Grafana needs a service account token before `grafana-mcp` is useful. Create one at
-**localhost:3000 → Administration → Service accounts**, then restart with `GRAFANA_TOKEN=...` and
-`GRAFANA_MCP_URL=http://grafana-mcp:8000/mcp`. Without it, leave `GRAFANA_MCP_URL` unset and the
-investigation runs on Prometheus alone.
 
 ## On Kubernetes
 
@@ -140,22 +221,24 @@ read or forwarded to the sink. Put it in Postgres if you want it to outlive the 
 
 ## Configuration
 
-The module is off unless `WORKFLOW_ENABLED=true`, and refuses to start if it is on with no MCP
-server configured - failing at boot rather than answering `202` to alerts it can never
-investigate.
+The module is off unless `WORKFLOW_ENABLED=true`. With it on it refuses to start if no MCP server
+is configured, or if `api` is selected with no credential in the environment - failing at boot
+rather than answering `202` to alerts it can never investigate.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `WORKFLOW_ENABLED` | `false` | Turns the module on. Only artic needs it |
-| `ANTHROPIC_API_KEY` | - | Read by the SDK from the environment |
+| `WORKFLOW_INVESTIGATOR` | `api` | `api`, `cli` or `dry-run` - see above |
+| `WORKFLOW_CLI_COMMAND` | `claude` | Which binary `cli` shells out to |
+| `ANTHROPIC_API_KEY` | - | Read by the SDK from the environment. Required for `api`, unused by the other two |
 | `PROMETHEUS_MCP_URL` / `GRAFANA_MCP_URL` / `KUBERNETES_MCP_URL` | - | MCP endpoints. Blank means "not configured"; at least one must be set |
 | `WORKFLOW_WEBHOOK_SECRET` | - | HMAC-SHA256 secret. **Blank disables verification** - only acceptable when the endpoint is unreachable from outside the cluster, which is the case for Alertmanager, since it cannot sign |
 | `WORKFLOW_SIGNATURE_HEADER` | `X-Tern-Signature` | `X-Incident-Signature` for incident.io |
 | `WORKFLOW_MODEL` | `claude-opus-5` | |
-| `WORKFLOW_EFFORT` | `high` | `low`, `medium`, `high`, `xhigh`, `max`. Lower is cheaper and faster; `high` is a reasonable floor for something that has to read telemetry and be right |
-| `WORKFLOW_MAX_TOKENS` | `16000` | Per turn, covering thinking and text - the model thinks by default |
-| `WORKFLOW_MAX_TURNS` | `24` | Hard stop on the tool loop |
-| `WORKFLOW_RUN_TIMEOUT` | `10m` | Wall-clock stop, checked between turns |
+| `WORKFLOW_EFFORT` | `high` | `api` only. `low`, `medium`, `high`, `xhigh`, `max`. Lower is cheaper and faster; `high` is a reasonable floor for something that has to read telemetry and be right |
+| `WORKFLOW_MAX_TOKENS` | `16000` | `api` only. Per turn, covering thinking and text - the model thinks by default |
+| `WORKFLOW_MAX_TURNS` | `24` | `api` only. Hard stop on the tool loop; `cli` bounds itself |
+| `WORKFLOW_RUN_TIMEOUT` | `10m` | Wall-clock stop. Checked between turns under `api`, and kills the subprocess under `cli` |
 | `WORKFLOW_CONCURRENCY` | `2` | Investigations in flight. Each one costs tokens |
 | `WORKFLOW_QUEUE_DEPTH` | `32` | Queued investigations before new alerts are rejected |
 | `WORKFLOW_HISTORY_SIZE` | `50` | Runs kept in memory |
@@ -167,9 +250,12 @@ investigate.
 and on a hosted alert source by whoever can make one fire. That text goes into the prompt. The
 defence is not prompt wording, it is that every tool is read-only at the credential: a read-only
 Prometheus API, a Grafana service account scoped to Viewer, a Kubernetes ClusterRole with three
-verbs. Keep it that way.
+verbs. Keep it that way. Under `cli` this matters more, not less - the prompt is being handled by
+a session on your own machine, which is why the tools that could write to it are refused
+explicitly.
 
-**It costs money per alert.** A flapping rule is a bill. `WORKFLOW_CONCURRENCY` and
+**It costs money per alert**, under `cli` as much as under `api` - the bill just moves to whoever
+is logged in. A flapping rule is a bill. `WORKFLOW_CONCURRENCY` and
 `WORKFLOW_QUEUE_DEPTH` bound how much can be in flight, and Alertmanager's `repeat_interval` and
 `group_interval` bound how often the same alert arrives. Set `max_alerts` on the webhook receiver
 so a storm does not arrive as one enormous payload.

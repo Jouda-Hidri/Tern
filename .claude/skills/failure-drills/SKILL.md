@@ -12,6 +12,10 @@ against the table in the README's "When things break".
 
 Everything here runs against docker compose on `localhost:8080`. It changes no code.
 
+Stopping antarctic is also what fires `TernTargetDown`, so if the `workflow` profile is up and
+`WORKFLOW_ENABLED=true`, this drill will queue an investigation and, under `api` or `cli`, pay for
+it. Run the drill without that profile, or with `WORKFLOW_INVESTIGATOR=dry-run`.
+
 `EndToEndTest` asserts the same answers automatically, against a proxy that hangs or refuses on
 command, and it runs in seconds. Use it for "did this change break the failure modes". Use this
 drill for what a test with a stubbed seam cannot tell you: that the real topology - separate

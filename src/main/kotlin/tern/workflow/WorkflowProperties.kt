@@ -6,6 +6,8 @@ import java.time.Duration
 @ConfigurationProperties(prefix = "tern.workflow")
 data class WorkflowProperties(
     val enabled: Boolean = false,
+    val investigator: InvestigatorKind = InvestigatorKind.API,
+    val cliCommand: String = "claude",
     val model: String = "claude-opus-5",
     val effort: String = "high",
     val maxTokens: Long = 16_000,

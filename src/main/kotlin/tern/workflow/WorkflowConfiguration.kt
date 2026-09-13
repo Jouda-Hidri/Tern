@@ -15,7 +15,7 @@ private val CREDENTIAL_VARIABLES = listOf("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_T
 
 fun requireAnthropicCredential(env: (String) -> String?) {
     check(CREDENTIAL_VARIABLES.any { !env(it).isNullOrBlank() }) {
-        "tern.workflow.enabled is true but none of ${CREDENTIAL_VARIABLES.joinToString(" or ")} is " +
+        "tern.workflow.investigator is api but none of ${CREDENTIAL_VARIABLES.joinToString(" or ")} is " +
             "set. The SDK does not notice until its first call, so without this the service would " +
             "start healthy, accept alerts, and fail each one on a 401 a minute later"
     }
@@ -34,13 +34,6 @@ class WorkflowConfiguration {
     fun runStore(properties: WorkflowProperties) = RunStore(properties.historySize)
 
     @Bean
-    @ConditionalOnMissingBean
-    fun anthropicClient(): AnthropicClient {
-        requireAnthropicCredential(System::getenv)
-        return AnthropicOkHttpClient.fromEnv()
-    }
-
-    @Bean
     fun mcpClients(
         properties: WorkflowProperties,
         objectMapper: ObjectMapper,
@@ -56,12 +49,44 @@ class WorkflowConfiguration {
     }
 
     @Bean
-    fun investigator(
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "tern.workflow", name = ["investigator"], havingValue = "api", matchIfMissing = true)
+    fun anthropicClient(): AnthropicClient {
+        requireAnthropicCredential(System::getenv)
+        return AnthropicOkHttpClient.fromEnv()
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "tern.workflow", name = ["investigator"], havingValue = "api", matchIfMissing = true)
+    fun apiInvestigator(
         anthropicClient: AnthropicClient,
         properties: WorkflowProperties,
         objectMapper: ObjectMapper,
         mcpClients: List<McpClient>,
-    ) = Investigator(anthropicClient, properties, objectMapper, mcpClients)
+    ): Investigator {
+        logger.info("Workflow - investigating over the API as ${properties.model}")
+        return ApiInvestigator(anthropicClient, properties, objectMapper, mcpClients)
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "tern.workflow", name = ["investigator"], havingValue = "cli")
+    fun cliInvestigator(properties: WorkflowProperties, objectMapper: ObjectMapper): Investigator {
+        logger.info(
+            "Workflow - investigating through the local `${properties.cliCommand}` session. No API key is " +
+                "used, and the session runs as whoever started this process",
+        )
+        return CliInvestigator(properties, objectMapper)
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "tern.workflow", name = ["investigator"], havingValue = "dry-run")
+    fun dryRunInvestigator(mcpClients: List<McpClient>): Investigator {
+        logger.warn(
+            "Workflow - DRY RUN. Alerts will reach the MCP servers and produce a placeholder report. " +
+                "No model is called and nothing is charged",
+        )
+        return DryRunInvestigator(mcpClients)
+    }
 
     @Bean
     fun reportPublisher(

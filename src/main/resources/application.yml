@@ -19,6 +19,11 @@ tern:
     # Off unless a webhook is actually wired up: it needs ANTHROPIC_API_KEY and at least one
     # reachable MCP server, and it refuses to start without them. See docs/workflow.md.
     enabled: ${WORKFLOW_ENABLED:false}
+    # Where the thinking happens. `api` calls Anthropic and needs a key. `cli` shells out to the
+    # Claude Code session of whoever started the process, which needs no key but means running
+    # this on a machine rather than in a container. `dry-run` calls no model at all.
+    investigator: ${WORKFLOW_INVESTIGATOR:api}
+    cli-command: ${WORKFLOW_CLI_COMMAND:claude}
     model: ${WORKFLOW_MODEL:claude-opus-5}
     effort: ${WORKFLOW_EFFORT:high}
     max-tokens: ${WORKFLOW_MAX_TOKENS:16000}

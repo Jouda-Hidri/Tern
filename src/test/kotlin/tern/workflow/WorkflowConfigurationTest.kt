@@ -55,6 +55,42 @@ class WorkflowConfigurationTest {
     }
 
     @Test
+    fun `cli and dry run need no credential at all, and never build an anthropic client`() {
+        mapOf(
+            "cli" to CliInvestigator::class.java,
+            "dry-run" to DryRunInvestigator::class.java,
+        ).forEach { (kind, implementation) ->
+            ApplicationContextRunner()
+                .withConfiguration(
+                    AutoConfigurations.of(JacksonAutoConfiguration::class.java, WebClientAutoConfiguration::class.java),
+                )
+                .withUserConfiguration(WorkflowConfiguration::class.java)
+                .withPropertyValues(
+                    "tern.workflow.enabled=true",
+                    "tern.workflow.investigator=$kind",
+                    "tern.workflow.mcp.prometheus.url=http://prometheus-mcp:8000/mcp",
+                )
+                .run { context ->
+                    assertThat(context).hasNotFailed()
+                    assertThat(context).hasSingleBean(InvestigationRunner::class.java)
+                    assertThat(context).doesNotHaveBean(AnthropicClient::class.java)
+                    assertThat(context.getBean(Investigator::class.java)).isInstanceOf(implementation)
+                }
+        }
+    }
+
+    @Test
+    fun `the api is what you get when nothing says otherwise`() {
+        runner.withPropertyValues(
+            "tern.workflow.enabled=true",
+            "tern.workflow.mcp.prometheus.url=http://prometheus-mcp:8000/mcp",
+        ).run { context ->
+            assertThat(context).hasNotFailed()
+            assertThat(context.getBean(Investigator::class.java)).isInstanceOf(ApiInvestigator::class.java)
+        }
+    }
+
+    @Test
     fun `wires one client per configured server and ignores the blank ones`() {
         runner.withPropertyValues(
             "tern.workflow.enabled=true",
