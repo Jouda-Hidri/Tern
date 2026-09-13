@@ -198,10 +198,9 @@ external is needed.
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env      # add PROMETHEUS_PORT / GRAFANA_PORT if 9091 or 3000 are taken
 WORKFLOW_ENABLED=true docker compose --profile workflow up -d --build
 
-docker compose stop antarctic                   # break something
-curl -s -o /dev/null localhost:8080/            # give the rule something to see
+docker compose stop antarctic                     # TernTargetDown fires ~75s later, no traffic needed
 
-curl -s localhost:8080/workflow/runs              # a minute later: the run it queued
+curl -s localhost:8080/workflow/runs              # the run Alertmanager queued
 curl -s localhost:8080/workflow/runs/<id>/report  # the report
 ````
 

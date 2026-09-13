@@ -57,17 +57,23 @@ That starts Prometheus (scraping both roles), Alertmanager (webhooking artic), G
 Prometheus MCP server. Then make something break:
 
 ````
-docker compose stop antarctic          # artic starts answering 503/504
-curl -s -o /dev/null localhost:8080/   # give the rule something to see
+docker compose stop antarctic
 ````
 
-`TernArticErrors` fires after a minute, Alertmanager groups for ten seconds and POSTs. Watch it:
+`TernTargetDown` needs no traffic - Prometheus stops being able to scrape antarctic, the rule
+waits out its `for: 1m`, Alertmanager groups for ten seconds, and the webhook lands about 75
+seconds after the container stops. Watch it:
 
 ````
 docker compose logs -f artic | grep Workflow
 curl -s localhost:8080/workflow/runs | python3 -m json.tool
 curl -s localhost:8080/workflow/runs/<id>/report
 ````
+
+`TernArticErrors` is the other obvious one to try, but it will not fire from a handful of curls.
+`rate()` does not count the jump from a series that does not exist yet to its first sample, so a
+one-shot burst of errors against a freshly started container evaluates to zero. It needs errors
+spread across several scrapes - `benchmark/load.sh`, or a loop running for a couple of minutes.
 
 Or skip the alerting stack and POST an alert yourself:
 
