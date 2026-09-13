@@ -115,7 +115,7 @@ docker compose stop antarctic
 Antarctic is the back end that owns the database, so stopping it is the most realistic breakage
 available: artic immediately starts answering 503 and 504, and Prometheus stops being able to
 scrape antarctic at all. It is the second of those that fires the alert. The chain, end to end,
-takes about 75 seconds:
+takes about 85 seconds:
 
 | | |
 | --- | --- |

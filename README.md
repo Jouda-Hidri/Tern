@@ -200,22 +200,33 @@ external is needed. `WORKFLOW_INVESTIGATOR` picks how it reaches Claude:
 | `cli` | none | your own Claude Code session. Runs on your machine, not in the container |
 | `api` | `ANTHROPIC_API_KEY` | the real thing, and the only one fit for production |
 
+Pick one and start it:
+
 ````
+# no model, nothing to pay, every other part real
 WORKFLOW_ENABLED=true WORKFLOW_INVESTIGATOR=dry-run docker compose --profile workflow up -d --build
-./run-local.sh                                     # or: your Claude session, on your machine
+
+# or a real investigation, through the Claude session you are already logged into.
+# Runs in the foreground - leave it there and use a second terminal for the rest.
+./run-local.sh
 ````
 
 Then break something and read what comes back:
 
 ````
-docker compose stop antarctic                      # TernTargetDown fires ~75s later, no traffic needed
+docker compose stop antarctic                      # no traffic needed; the run appears ~85s later
 curl -s localhost:8080/workflow/runs               # the run Alertmanager queued
 curl -s localhost:8080/workflow/runs/<id>/report   # the report
 docker compose start antarctic                     # or it re-fires, and pays for a run, every hour
 ````
 
-Stopping antarctic is what makes Prometheus miss a scrape, which is what fires the rule. To skip
-the wait, POST an alert to `/workflow/alerts` yourself - same path from there on.
+Stopping antarctic is what makes Prometheus miss a scrape, which is what fires `TernTargetDown`.
+Skip the wait by being the webhook yourself - identical path from `AlertParser` onwards:
+
+````
+curl -X POST localhost:8080/workflow/alerts -H 'Content-Type: application/json' \
+  -d '{"title":"antarctic is unreachable","severity":"critical","labels":{"role":"antarctic"}}'
+````
 
 Every run costs tokens, `cli` included. Artic refuses to start if `api` is selected without a key,
 rather than accepting alerts it cannot investigate.
