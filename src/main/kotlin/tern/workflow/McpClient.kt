@@ -31,10 +31,8 @@ class McpClient(
 ) {
     private val logger = LoggerFactory.getLogger(McpClient::class.java)
 
-    // Cloned, so one server's base url cannot leak into the next client built from the same
-    // builder. Redirects are followed because servers routinely answer /mcp with a 307 to /mcp/,
-    // and an unfollowed redirect is a 200-shaped empty body - a server that looks like it has no
-    // tools rather than one that failed.
+    // Servers answer /mcp with a 307 to /mcp/, and an unfollowed redirect reads as a server with
+    // no tools rather than one that failed.
     private val client = webClientBuilder.clone()
         .clientConnector(ReactorClientHttpConnector(HttpClient.create().followRedirect(true)))
         .baseUrl(properties.url)

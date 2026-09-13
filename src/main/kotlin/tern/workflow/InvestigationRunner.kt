@@ -12,7 +12,6 @@ import java.util.concurrent.TimeUnit
 class InvestigationRunner(
     private val investigator: Investigator,
     private val store: RunStore,
-    private val publisher: ReportPublisher,
     properties: WorkflowProperties,
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(InvestigationRunner::class.java)
@@ -69,7 +68,7 @@ class InvestigationRunner(
                 )
             }
             logger.info("Workflow - run $id produced a report after ${investigation.turns} turns")
-            store.get(id)?.let(publisher::publish)
+            store.get(id)?.report?.let { logger.info("Workflow - report for run $id\n$it") }
         } catch (e: Exception) {
             logger.error("Workflow - run $id failed", e)
             store.update(id) {

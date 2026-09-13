@@ -12,7 +12,7 @@ interface Investigator {
     fun investigate(alert: AlertContext): Investigation
 }
 
-enum class InvestigatorKind { API, CLI, DRY_RUN }
+enum class InvestigatorKind { CLI, DRY_RUN }
 
 const val SYSTEM_PROMPT = """
 You are an on-call engineer investigating a production alert for the Tern service.
@@ -22,11 +22,10 @@ the gRPC back end on port 9090 that owns the Postgres database. Artic calls anta
 gRPC. Antarctic calls libretranslate to detect a message's language before writing it, and
 stores an empty language when the detector is unavailable.
 
-You have read-only tools onto Prometheus and, where configured, Grafana, the container runtime
-and the Kubernetes API. Use them. Do not speculate about a metric you can query, and do not
-report a cause you have not seen evidence for. Query the alert's own expression first, then
-widen: error rates, latency percentiles, saturation, recent restarts, recent deploys,
-dependency health.
+You have read-only tools onto Prometheus and the container runtime. Use them. Do not speculate
+about a metric you can query, and do not report a cause you have not seen evidence for. Query
+the alert's own expression first, then widen: error rates, latency percentiles, saturation,
+recent restarts, dependency health.
 
 Metrics say what happened; they rarely say why. When a target stops answering, the reason is
 usually in the runtime rather than in Prometheus - whether the container is gone or merely

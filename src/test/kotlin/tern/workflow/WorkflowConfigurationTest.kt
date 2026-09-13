@@ -1,8 +1,6 @@
 package tern.workflow
 
-import com.anthropic.client.AnthropicClient
 import com.fasterxml.jackson.databind.ObjectMapper
-import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -17,7 +15,6 @@ class WorkflowConfigurationTest {
             AutoConfigurations.of(JacksonAutoConfiguration::class.java, WebClientAutoConfiguration::class.java),
         )
         .withUserConfiguration(WorkflowConfiguration::class.java)
-        .withBean(AnthropicClient::class.java, { mockk<AnthropicClient>(relaxed = true) })
 
     @Test
     fun `is absent unless it is turned on`() {
@@ -42,20 +39,7 @@ class WorkflowConfigurationTest {
     }
 
     @Test
-    fun `refuses to start without a credential, rather than failing every alert on a 401`() {
-        assertThatThrownBy { requireAnthropicCredential { null } }
-            .isInstanceOf(IllegalStateException::class.java)
-            .hasMessageContaining("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN")
-
-        assertThatThrownBy { requireAnthropicCredential { "" } }
-            .isInstanceOf(IllegalStateException::class.java)
-
-        requireAnthropicCredential { name -> "set".takeIf { name == "ANTHROPIC_AUTH_TOKEN" } }
-        requireAnthropicCredential { name -> "set".takeIf { name == "ANTHROPIC_API_KEY" } }
-    }
-
-    @Test
-    fun `cli and dry run need no credential at all, and never build an anthropic client`() {
+    fun `each investigator kind gets its own implementation`() {
         mapOf(
             "cli" to CliInvestigator::class.java,
             "dry-run" to DryRunInvestigator::class.java,
@@ -73,20 +57,8 @@ class WorkflowConfigurationTest {
                 .run { context ->
                     assertThat(context).hasNotFailed()
                     assertThat(context).hasSingleBean(InvestigationRunner::class.java)
-                    assertThat(context).doesNotHaveBean(AnthropicClient::class.java)
                     assertThat(context.getBean(Investigator::class.java)).isInstanceOf(implementation)
                 }
-        }
-    }
-
-    @Test
-    fun `the api is what you get when nothing says otherwise`() {
-        runner.withPropertyValues(
-            "tern.workflow.enabled=true",
-            "tern.workflow.mcp.prometheus.url=http://prometheus-mcp:8000/mcp",
-        ).run { context ->
-            assertThat(context).hasNotFailed()
-            assertThat(context.getBean(Investigator::class.java)).isInstanceOf(ApiInvestigator::class.java)
         }
     }
 

@@ -24,7 +24,6 @@
 		<mockk.version>1.13.5</mockk.version>
 		<mockwebserver.version>4.12.0</mockwebserver.version>
 		<grpc.kotlin.version>1.4.1</grpc.kotlin.version>
-		<anthropic.version>2.34.0</anthropic.version>
 	</properties>
 
 	<dependencyManagement>
@@ -211,11 +210,6 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webflux</artifactId>
 		</dependency>
-		<dependency>
-			<groupId>com.anthropic</groupId>
-			<artifactId>anthropic-java</artifactId>
-			<version>${anthropic.version}</version>
-		</dependency>
 	</dependencies>
 
 	<build>
@@ -341,6 +335,7 @@
 						<configuration>
 							<sources>
 								<source>${basedir}/target/generated-sources/grpc-kotlin</source>
+								<source>${basedir}/src/main/java</source>
 							</sources>
 						</configuration>
 					</execution>

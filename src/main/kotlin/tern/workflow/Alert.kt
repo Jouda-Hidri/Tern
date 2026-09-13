@@ -38,7 +38,6 @@ class AlertParser(private val mapper: ObjectMapper) {
         val root = mapper.readTree(body)
         return when {
             root.path("alerts").isArray -> root.path("alerts").map(::fromAlertmanager)
-            root.path("incident").isObject -> listOf(fromIncidentIo(root))
             else -> listOf(fromGeneric(root))
         }
     }
@@ -58,28 +57,6 @@ class AlertParser(private val mapper: ObjectMapper) {
             links = buildMap {
                 alert.path("generatorURL").asText("").ifBlank { null }?.let { put("generator", it) }
                 annotations["runbook_url"]?.let { put("runbook", it) }
-            },
-        )
-    }
-
-    private fun fromIncidentIo(root: JsonNode): AlertContext {
-        val incident = root.path("incident")
-        return AlertContext(
-            source = "incident.io",
-            fingerprint = incident.path("id").asText(""),
-            title = incident.path("name").asText("unnamed incident"),
-            summary = incident.path("summary").asText(""),
-            severity = incident.path("severity").path("name").asText("unknown"),
-            status = incident.path("incident_status").path("name").asText(
-                root.path("event_type").asText("unknown"),
-            ),
-            startedAt = incident.path("created_at").asText(root.path("created_at").asText("")),
-            labels = buildMap {
-                incident.path("reference").asText("").ifBlank { null }?.let { put("reference", it) }
-                incident.path("mode").asText("").ifBlank { null }?.let { put("mode", it) }
-            },
-            links = buildMap {
-                incident.path("permalink").asText("").ifBlank { null }?.let { put("incident", it) }
             },
         )
     }

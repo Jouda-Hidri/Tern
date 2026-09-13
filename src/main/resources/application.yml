@@ -16,37 +16,23 @@ tern:
     batch-size: ${BACKFILL_BATCH_SIZE:100}
     parallelism: ${BACKFILL_PARALLELISM:8}
   workflow:
-    # Off unless a webhook is actually wired up: it needs ANTHROPIC_API_KEY and at least one
-    # reachable MCP server, and it refuses to start without them. See docs/workflow.md.
+    # Refuses to start with no reachable MCP server. See docs/workflow.md.
     enabled: ${WORKFLOW_ENABLED:false}
-    # Where the thinking happens. `api` calls Anthropic and needs a key. `cli` shells out to the
-    # Claude Code session of whoever started the process, which needs no key but means running
-    # this on a machine rather than in a container. `dry-run` calls no model at all.
-    investigator: ${WORKFLOW_INVESTIGATOR:api}
+    # `cli` shells out to the Claude Code session of whoever started the process, so it only
+    # works on a machine. `dry-run` calls no model at all.
+    investigator: ${WORKFLOW_INVESTIGATOR:dry-run}
     cli-command: ${WORKFLOW_CLI_COMMAND:claude}
     model: ${WORKFLOW_MODEL:claude-opus-5}
-    effort: ${WORKFLOW_EFFORT:high}
-    max-tokens: ${WORKFLOW_MAX_TOKENS:16000}
-    max-turns: ${WORKFLOW_MAX_TURNS:24}
     run-timeout: ${WORKFLOW_RUN_TIMEOUT:10m}
     concurrency: ${WORKFLOW_CONCURRENCY:2}
     queue-depth: ${WORKFLOW_QUEUE_DEPTH:32}
     history-size: ${WORKFLOW_HISTORY_SIZE:50}
-    webhook-secret: ${WORKFLOW_WEBHOOK_SECRET:}
-    signature-header: ${WORKFLOW_SIGNATURE_HEADER:X-Tern-Signature}
     mcp:
       prometheus:
         url: ${PROMETHEUS_MCP_URL:}
       docker:
         url: ${DOCKER_MCP_URL:}
         token: ${DOCKER_MCP_TOKEN:}
-      grafana:
-        url: ${GRAFANA_MCP_URL:}
-      kubernetes:
-        url: ${KUBERNETES_MCP_URL:}
-    sink:
-      url: ${WORKFLOW_SINK_URL:}
-      token: ${WORKFLOW_SINK_TOKEN:}
 spring:
   flyway:
     baselineOnMigrate: true

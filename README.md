@@ -188,26 +188,21 @@ clears once antarctic finishes starting.
 ## Investigating an alert
 
 Off by default. An alert webhook lands on `POST /workflow/alerts`, the service investigates it
-with Claude through read-only MCP servers, and answers a report at `GET /workflow/runs/{id}/report`.
-The `workflow` profile starts everything needed: Prometheus, Alertmanager, Grafana, and MCP
-servers for Prometheus and for Docker. Nothing external is involved.
+with Claude through read-only MCP servers onto Prometheus and Docker, and answers a report at
+`GET /workflow/runs/{id}/report`. The `workflow` profile starts everything needed: Prometheus,
+Alertmanager, Grafana, and the two MCP servers. Nothing external is involved.
 
-**1. Choose how it reaches Claude.**
+**1. Choose how it reaches Claude.** `WORKFLOW_INVESTIGATOR` picks one, neither needs a key:
 
-| `WORKFLOW_INVESTIGATOR` | Credential | |
-| --- | --- | --- |
-| `dry-run` | none | every step except the model. Start here |
-| `cli` | none | the Claude Code session you are logged into, on your machine |
-| `api` | `ANTHROPIC_API_KEY` in `.env` | the only one fit for production |
+| | |
+| --- | --- |
+| `dry-run` | every step except the model. Start here |
+| `cli` | the Claude Code session you are logged into. Runs on your machine, not in the container |
 
 **2. Start it.**
 
 ````
 # dry-run, in the container
-WORKFLOW_ENABLED=true WORKFLOW_INVESTIGATOR=dry-run docker compose --profile workflow up -d --build
-
-# api, in the container
-echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
 WORKFLOW_ENABLED=true docker compose --profile workflow up -d --build
 
 # cli, on your machine. Runs in the foreground - use a second terminal for step 3 on.
@@ -248,11 +243,9 @@ curl -s localhost:8080/workflow/runs/<id>          # tools called, turns, tokens
 docker compose start antarctic
 ````
 
-Every run costs tokens, `cli` included. Artic refuses to start if `api` has no key, rather than
-accepting alerts it cannot investigate.
-
-incident.io cannot run here - it is SaaS only - but it can send the webhook or receive the report.
-That, the Kubernetes manifests, and the read-only credentials this needs are in
+Every run costs tokens - under `cli` they are billed to whoever is logged in. `/workflow/alerts`
+has no authentication, so keep it off the public internet. Why the alert fires when it does, what
+the investigation is allowed to touch, and how to add another MCP server are in
 [docs/workflow.md](docs/workflow.md).
 
 ## Health and metrics

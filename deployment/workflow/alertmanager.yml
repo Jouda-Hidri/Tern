@@ -8,14 +8,9 @@ route:
 receivers:
   - name: tern-workflow
     webhook_configs:
-      # Alertmanager cannot sign its webhooks, so leave WORKFLOW_WEBHOOK_SECRET unset when this
-      # is the only sender and keep the endpoint off the public internet. incident.io does sign,
-      # which is what the secret and X-Incident-Signature header are for.
-      #
-      # The host rather than `artic`, so that one URL works wherever artic is. Compose publishes
-      # 8080 on the host, so this reaches the container; and it still reaches artic when it is
-      # run on the machine instead, which is what run-local.sh does to borrow a Claude session.
-      # `artic` would only have worked for the first of those.
+      # The host rather than `artic`, so one URL works wherever artic is: compose publishes 8080
+      # on the host, so this reaches the container, and it still reaches artic when run-local.sh
+      # runs it on the machine instead.
       - url: http://host.docker.internal:8080/workflow/alerts
         send_resolved: false
         max_alerts: 5

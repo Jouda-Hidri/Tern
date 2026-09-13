@@ -53,26 +53,6 @@ spec:
               value: "artic"
             - name: ANTARCTIC_TARGET
               value: "antarctic.default.svc.cluster.local:30000"
-            # The alert-investigation workflow, off until the secret below exists. Applying
-            # deployment/workflow/ and flipping this to "true" turns it on - see docs/workflow.md.
-            - name: WORKFLOW_ENABLED
-              value: "false"
-            - name: KUBERNETES_MCP_URL
-              value: "http://kubernetes-mcp.default.svc.cluster.local:8080/mcp"
-            - name: PROMETHEUS_MCP_URL
-              value: "http://prometheus-mcp.default.svc.cluster.local:8000/mcp"
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: workflow-secrets
-                  key: anthropic_api_key
-                  optional: true
-            - name: WORKFLOW_WEBHOOK_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: workflow-secrets
-                  key: webhook_secret
-                  optional: true
           ports:
             - containerPort: 8080
           # Liveness only restarts the pod if the JVM itself is wedged; readiness gates traffic.

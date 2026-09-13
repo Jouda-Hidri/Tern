@@ -1,19 +1,15 @@
 #!/usr/bin/env bash
-# Runs artic on this machine instead of in a container, so the investigation can use the Claude
-# Code session you are already logged into rather than an API key. Everything else - antarctic,
-# Postgres, Prometheus, Alertmanager, the MCP servers - stays in compose and is reached over
-# published ports.
+# Runs artic on this machine so the investigation can use the Claude Code session you are logged
+# into. Everything else stays in compose and is reached over published ports.
 #
-# In production this would be an API key and a container. A CLI session belongs to a person, not
-# to a service: it cannot be rotated, scoped, or handed to a deployment.
+# Not a production shape: a CLI session belongs to a person, not a service.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 command -v "${WORKFLOW_CLI_COMMAND:-claude}" >/dev/null \
-  || { echo "No '${WORKFLOW_CLI_COMMAND:-claude}' on PATH. Install Claude Code, or set WORKFLOW_INVESTIGATOR=api"; exit 1; }
+  || { echo "No '${WORKFLOW_CLI_COMMAND:-claude}' on PATH. Install Claude Code, or use WORKFLOW_INVESTIGATOR=dry-run in compose"; exit 1; }
 
-# The same JDK 21 the build needs. The Kotlin 1.9 compiler cannot parse a Java 26 version string,
-# and a newer JDK is what `mvn` picks up here by default.
+# Kotlin 1.9 cannot parse a Java 26 version string, and that is what `mvn` picks up by default.
 if [ -z "${JAVA_HOME:-}" ] && [ -x /usr/libexec/java_home ]; then
   JAVA_HOME="$(/usr/libexec/java_home -v 21)"
   export JAVA_HOME
@@ -23,8 +19,7 @@ docker compose --profile workflow up -d
 # Frees 8080, which the local process is about to take.
 docker compose stop artic
 
-# A previous run that was killed rather than stopped can leave its JVM holding 8080, and Spring's
-# own failure for that is a wall of stack trace that does not name the culprit.
+# A run killed rather than stopped leaves its JVM on 8080, and Spring's error never names it.
 if holder="$(lsof -nP -iTCP:8080 -sTCP:LISTEN -t 2>/dev/null)" && [ -n "$holder" ]; then
   echo "Port 8080 is still held by pid(s): $holder"
   echo "Probably a previous ./run-local.sh. Stop it with: kill $holder"
@@ -34,8 +29,7 @@ fi
 export POSTGRES_HOST=localhost POSTGRES_DB=polldb POSTGRES_USER=postgres POSTGRES_PASSWORD=password
 export ANTARCTIC_TARGET=localhost:9090
 export SERVICE_NAME=artic
-# The image serves gRPC in either role, but only antarctic needs it - and antarctic already has
-# 9090 on this machine. -1 turns the server off; artic is only a gRPC client.
+# Only antarctic needs a gRPC server, and it already has 9090 here. Artic is only a client.
 export GRPC_SERVER_PORT=-1
 export WORKFLOW_ENABLED=true
 export WORKFLOW_INVESTIGATOR="${WORKFLOW_INVESTIGATOR:-cli}"

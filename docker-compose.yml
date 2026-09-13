@@ -19,19 +19,12 @@ services:
       - SERVICE_NAME=artic
       # LOG_LEVEL=DEBUG turns the one-line-per-entry default into the full hop-by-hop trace
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      # The alert-investigation workflow. Off unless the `workflow` profile is up, because it
-      # needs the MCP servers that profile starts. See docs/workflow.md.
+      # Needs the MCP servers the `workflow` profile starts. `cli` cannot run in here - it needs
+      # the Claude Code session on your machine, which is what run-local.sh is for.
       - WORKFLOW_ENABLED=${WORKFLOW_ENABLED:-false}
-      # `cli` is not available in here: it needs the Claude Code session on your machine.
-      - WORKFLOW_INVESTIGATOR=${WORKFLOW_INVESTIGATOR:-api}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - WORKFLOW_INVESTIGATOR=${WORKFLOW_INVESTIGATOR:-dry-run}
       - PROMETHEUS_MCP_URL=${PROMETHEUS_MCP_URL:-http://prometheus-mcp:8000/mcp}
       - DOCKER_MCP_URL=${DOCKER_MCP_URL:-http://docker-mcp:8000/mcp}
-      - GRAFANA_MCP_URL=${GRAFANA_MCP_URL:-}
-      - KUBERNETES_MCP_URL=${KUBERNETES_MCP_URL:-}
-      - WORKFLOW_WEBHOOK_SECRET=${WORKFLOW_WEBHOOK_SECRET:-}
-      - WORKFLOW_SINK_URL=${WORKFLOW_SINK_URL:-}
-      - WORKFLOW_SINK_TOKEN=${WORKFLOW_SINK_TOKEN:-}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 5s
@@ -104,7 +97,7 @@ services:
       start_period: 180s
 
   # Everything below is the `workflow` profile: the alert source, and the MCP servers the
-  # investigation reads through. incident.io is not here and cannot be - it is SaaS only.
+  # investigation reads through.
   prometheus:
     image: prom/prometheus:v2.54.1
     profiles: [ "workflow" ]
@@ -193,21 +186,6 @@ services:
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
     depends_on:
       - docker-socket-proxy
-
-  grafana-mcp:
-    # Needs a Grafana service account token; without one, leave GRAFANA_MCP_URL unset and the
-    # investigation runs on the Prometheus MCP server alone.
-    image: mcp/grafana:latest
-    profiles: [ "workflow" ]
-    ports:
-      - "8001:8000"
-    environment:
-      - GRAFANA_URL=http://grafana:3000
-      - GRAFANA_SERVICE_ACCOUNT_TOKEN=${GRAFANA_TOKEN:-}
-      - GRAFANA_API_KEY=${GRAFANA_TOKEN:-}
-    command: ["-t", "streamable-http", "--address", "0.0.0.0:8000"]
-    depends_on:
-      - grafana
 
 volumes:
   postgres-data:

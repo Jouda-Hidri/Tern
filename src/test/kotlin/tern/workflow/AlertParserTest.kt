@@ -33,29 +33,6 @@ class AlertParserTest {
     }
 
     @Test
-    fun `reads an incident io webhook`() {
-        val alerts = parser.parse(
-            """
-            {"event_type":"public_incident.incident_created_v2","created_at":"2026-09-11T10:00:00Z",
-             "incident":{"id":"01ABC","reference":"INC-42","name":"Writes are failing",
-              "summary":"artic answering 503","permalink":"https://app.incident.io/incidents/42",
-              "severity":{"name":"Major"},"incident_status":{"name":"Investigating"},
-              "created_at":"2026-09-11T09:59:00Z"}}
-            """.trimIndent(),
-        )
-
-        assertThat(alerts).singleElement().satisfies({
-            assertThat(it.source).isEqualTo("incident.io")
-            assertThat(it.fingerprint).isEqualTo("01ABC")
-            assertThat(it.title).isEqualTo("Writes are failing")
-            assertThat(it.severity).isEqualTo("Major")
-            assertThat(it.status).isEqualTo("Investigating")
-            assertThat(it.labels).containsEntry("reference", "INC-42")
-            assertThat(it.links).containsEntry("incident", "https://app.incident.io/incidents/42")
-        })
-    }
-
-    @Test
     fun `falls back to a generic shape`() {
         val alerts = parser.parse("""{"title":"Disk full","severity":"warning","labels":{"host":"a"}}""")
 
