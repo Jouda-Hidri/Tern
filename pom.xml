@@ -335,6 +335,7 @@
 						<configuration>
 							<sources>
 								<source>${basedir}/target/generated-sources/grpc-kotlin</source>
+								<source>${basedir}/src/main/java</source>
 							</sources>
 						</configuration>
 					</execution>

@@ -15,6 +15,24 @@ tern:
     interval-ms: ${BACKFILL_INTERVAL_MS:60000}
     batch-size: ${BACKFILL_BATCH_SIZE:100}
     parallelism: ${BACKFILL_PARALLELISM:8}
+  workflow:
+    # Refuses to start with no reachable MCP server. See docs/workflow.md.
+    enabled: ${WORKFLOW_ENABLED:false}
+    # `cli` shells out to the Claude Code session of whoever started the process, so it only
+    # works on a machine. `dry-run` calls no model at all.
+    investigator: ${WORKFLOW_INVESTIGATOR:dry-run}
+    cli-command: ${WORKFLOW_CLI_COMMAND:claude}
+    model: ${WORKFLOW_MODEL:claude-opus-5}
+    run-timeout: ${WORKFLOW_RUN_TIMEOUT:10m}
+    concurrency: ${WORKFLOW_CONCURRENCY:2}
+    queue-depth: ${WORKFLOW_QUEUE_DEPTH:32}
+    history-size: ${WORKFLOW_HISTORY_SIZE:50}
+    mcp:
+      prometheus:
+        url: ${PROMETHEUS_MCP_URL:}
+      docker:
+        url: ${DOCKER_MCP_URL:}
+        token: ${DOCKER_MCP_TOKEN:}
 spring:
   flyway:
     baselineOnMigrate: true

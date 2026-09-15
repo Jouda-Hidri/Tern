@@ -25,8 +25,9 @@ connection instead of another REST service in the chain. Both roles run from the
 | `dbpostgresql` | 5432 | Postgres, schema managed by Flyway |
 | `libretranslate` | 5050 | Language detection. Behind a profile, see below |
 
-Three things are documented separately: [Istio, metrics and dashboards](docs/observability.md),
-[CI/CD](docs/ci-cd.md), and [why virtual threads are switched off](docs/concurrency.md).
+Four things are documented separately: [Istio, metrics and dashboards](docs/observability.md),
+[the alert investigation workflow](docs/workflow.md), [CI/CD](docs/ci-cd.md), and
+[why virtual threads are switched off](docs/concurrency.md).
 
 ## Quick start
 
@@ -183,6 +184,69 @@ would pull it out of the load balancer too - turning one outage into two.
 
 After antarctic returns, the next request or two may still fail while gRPC backs off; it
 clears once antarctic finishes starting.
+
+## Investigating an alert
+
+Off by default. An alert webhook lands on `POST /workflow/alerts`, the service investigates it
+with Claude through read-only MCP servers onto Prometheus and Docker, and answers a report at
+`GET /workflow/runs/{id}/report`. The `workflow` profile starts everything needed: Prometheus,
+Alertmanager, Grafana, and the two MCP servers. Nothing external is involved.
+
+**1. Choose how it reaches Claude.** `WORKFLOW_INVESTIGATOR` picks one, neither needs a key:
+
+| | |
+| --- | --- |
+| `dry-run` | every step except the model. Start here |
+| `cli` | the Claude Code session you are logged into. Runs on your machine, not in the container |
+
+**2. Start it.**
+
+````
+# dry-run, in the container
+WORKFLOW_ENABLED=true docker compose --profile workflow up -d --build
+
+# cli, on your machine. Runs in the foreground - use a second terminal for step 3 on.
+./run-local.sh
+````
+
+**3. Check it loaded.** Nothing downstream works without this line:
+
+````
+docker compose logs artic | grep "Workflow - MCP servers"    # -> prometheus, docker
+````
+
+**4. Trigger an alert.** Break something and wait ~85s - stopping antarctic makes Prometheus miss
+a scrape, which is what fires `TernTargetDown`:
+
+````
+docker compose stop antarctic
+````
+
+Or post one yourself. No waiting, and identical from `AlertParser` onwards:
+
+````
+curl -X POST localhost:8080/workflow/alerts -H 'Content-Type: application/json' \
+  -d '{"title":"antarctic is unreachable","severity":"critical","labels":{"role":"antarctic"}}'
+````
+
+**5. Read the report.**
+
+````
+curl -s localhost:8080/workflow/runs               # QUEUED -> RUNNING -> SUCCEEDED, and the id
+curl -s localhost:8080/workflow/runs/<id>/report   # the markdown
+curl -s localhost:8080/workflow/runs/<id>          # tools called, turns, tokens
+````
+
+**6. Put it back**, or the alert re-fires and pays for another run every hour:
+
+````
+docker compose start antarctic
+````
+
+Every run costs tokens - under `cli` they are billed to whoever is logged in. `/workflow/alerts`
+has no authentication, so keep it off the public internet. Why the alert fires when it does, what
+the investigation is allowed to touch, and how to add another MCP server are in
+[docs/workflow.md](docs/workflow.md).
 
 ## Health and metrics
 

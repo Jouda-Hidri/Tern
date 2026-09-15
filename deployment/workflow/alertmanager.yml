@@ -1,0 +1,16 @@
+route:
+  receiver: tern-workflow
+  group_by: [alertname, service]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 1h
+
+receivers:
+  - name: tern-workflow
+    webhook_configs:
+      # The host rather than `artic`, so one URL works wherever artic is: compose publishes 8080
+      # on the host, so this reaches the container, and it still reaches artic when run-local.sh
+      # runs it on the machine instead.
+      - url: http://host.docker.internal:8080/workflow/alerts
+        send_resolved: false
+        max_alerts: 5

@@ -19,6 +19,12 @@ services:
       - SERVICE_NAME=artic
       # LOG_LEVEL=DEBUG turns the one-line-per-entry default into the full hop-by-hop trace
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Needs the MCP servers the `workflow` profile starts. `cli` cannot run in here - it needs
+      # the Claude Code session on your machine, which is what run-local.sh is for.
+      - WORKFLOW_ENABLED=${WORKFLOW_ENABLED:-false}
+      - WORKFLOW_INVESTIGATOR=${WORKFLOW_INVESTIGATOR:-dry-run}
+      - PROMETHEUS_MCP_URL=${PROMETHEUS_MCP_URL:-http://prometheus-mcp:8000/mcp}
+      - DOCKER_MCP_URL=${DOCKER_MCP_URL:-http://docker-mcp:8000/mcp}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 5s
@@ -90,6 +96,101 @@ services:
       retries: 30
       start_period: 180s
 
+  # Everything below is the `workflow` profile: the alert source, and the MCP servers the
+  # investigation reads through.
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: [ "workflow" ]
+    ports:
+      # Host ports only, for you to look at. The services find each other by name on the compose
+      # network, so overriding these when another stack already owns 9091 or 3000 changes nothing.
+      - "${PROMETHEUS_PORT:-9091}:9090"
+    volumes:
+      - ./deployment/workflow/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deployment/workflow/rules.yml:/etc/prometheus/rules.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-lifecycle
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    profiles: [ "workflow" ]
+    # Docker Desktop resolves host.docker.internal on its own; this is what makes the same
+    # alertmanager.yml work on Linux, where it is not a magic name.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./deployment/workflow/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9093/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  prometheus-mcp:
+    # Reads Prometheus over its HTTP API and exposes query/range-query/label tools over MCP.
+    image: ghcr.io/pab1it0/prometheus-mcp-server:latest
+    profiles: [ "workflow" ]
+    ports:
+      - "8000:8000"
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+      - PROMETHEUS_MCP_SERVER_TRANSPORT=http
+      - PROMETHEUS_MCP_BIND_HOST=0.0.0.0
+      - PROMETHEUS_MCP_BIND_PORT=8000
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: [ "workflow" ]
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+    volumes:
+      - ./deployment/workflow/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - grafana-data:/var/lib/grafana
+
+  docker-socket-proxy:
+    # The Docker socket is root on the host: anything holding it can start a privileged container
+    # and own the machine. Mounting it `:ro` does not help - the socket is an API endpoint, and a
+    # read-only bind mount does not stop write calls through it. This proxy is what actually makes
+    # it read-only, by allowing GET on the container endpoints and refusing everything else, so a
+    # bug or an injected instruction in the investigation cannot reach a mutating API at all.
+    image: tecnativa/docker-socket-proxy:0.3.0
+    profiles: [ "workflow" ]
+    environment:
+      # IMAGES too: list_containers and get_container resolve each container's image, so with
+      # CONTAINERS alone they 403 and only get_logs works. POST=0 is what keeps it read-only.
+      - CONTAINERS=1
+      - IMAGES=1
+      - POST=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  docker-mcp:
+    # Answers what Prometheus cannot: why a container went away, and what it said on the way out.
+    image: codeberg.org/jhot/docker-mcp:latest
+    profiles: [ "workflow" ]
+    ports:
+      - "${DOCKER_MCP_PORT:-8002}:8000"
+    environment:
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+    depends_on:
+      - docker-socket-proxy
+
 volumes:
   postgres-data:
   libretranslate-models:
+  grafana-data:
